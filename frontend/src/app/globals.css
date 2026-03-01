@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/* ── Silent Frequency — Dark theme ────────────────────── */
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #e0e0e6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ── Glitch text effect ───────────────────────────────── */
+
+.glitch-text {
+  position: relative;
+  display: inline-block;
+}
+
+/* Only animate when --glitch > 0 */
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: var(--glitch, 0);
+}
+
+.glitch-text::before {
+  color: #0ff;
+  clip-path: inset(0 0 60% 0);
+  animation: glitch-top 2.5s infinite linear alternate-reverse;
+}
+
+.glitch-text::after {
+  color: #f0f;
+  clip-path: inset(60% 0 0 0);
+  animation: glitch-bottom 3s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-top {
+  0% {
+    transform: translate(0);
+  }
+  20% {
+    transform: translate(var(--glitch-px, 0), calc(var(--glitch-px, 0) * -0.5));
+  }
+  40% {
+    transform: translate(calc(var(--glitch-px, 0) * -1), 0);
+  }
+  60% {
+    transform: translate(var(--glitch-px, 0), var(--glitch-px, 0));
+  }
+  80% {
+    transform: translate(
+      calc(var(--glitch-px, 0) * -0.5),
+      calc(var(--glitch-px, 0) * 0.5)
+    );
+  }
+  100% {
+    transform: translate(0);
+  }
+}
+
+@keyframes glitch-bottom {
+  0% {
+    transform: translate(0);
+  }
+  25% {
+    transform: translate(calc(var(--glitch-px, 0) * -1), var(--glitch-px, 0));
+  }
+  50% {
+    transform: translate(var(--glitch-px, 0), calc(var(--glitch-px, 0) * -1));
+  }
+  75% {
+    transform: translate(calc(var(--glitch-px, 0) * 0.5), 0);
+  }
+  100% {
+    transform: translate(0);
+  }
+}
+
+/* Scanline overlay (subtle) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+}
