@@ -87,6 +87,12 @@ class GameSession(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active"
     )
+    condition: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="adaptive"
+    )
+    current_level_index: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0
+    )
     current_room: Mapped[str] = mapped_column(
         String(32), nullable=False, default="start_room"
     )

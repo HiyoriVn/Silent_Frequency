@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
@@ -24,7 +24,7 @@ from .schemas import (
     MasterySnapshot,
     MasteryDetail,
     MasteryResponse,
-    NextItemResponse,
+    NextPuzzleResponse,
     SubmitAttemptRequest,
     AttemptFeedback,
 )
@@ -58,7 +58,9 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new player + game session with initialised BKT state."""
-    data = await session_service.create_session(db, body.display_name)
+    data = await session_service.create_session(
+        db, body.display_name, body.condition
+    )
 
     return ApiResponse(
         ok=True,
@@ -66,6 +68,8 @@ async def create_session(
             session_id=data["session_id"],
             player_id=data["player_id"],
             session_token=data["session_token"],
+            condition=data["condition"],
+            current_level_index=data["current_level_index"],
             mastery=MasterySnapshot(**data["mastery"]),
             current_room=data["current_room"],
         ),
@@ -101,27 +105,26 @@ async def get_mastery(
 
 
 # ──────────────────────────────────────
-# GET /api/sessions/{id}/next-item
+# GET /api/sessions/{id}/next-puzzle
 # ──────────────────────────────────────
-@router.get("/sessions/{session_id}/next-item", response_model=ApiResponse)
-async def get_next_item(
+@router.get("/sessions/{session_id}/next-puzzle", response_model=ApiResponse)
+async def get_next_puzzle(
     session_id: uuid.UUID,
-    skill: str = Query(..., pattern=r"^(vocabulary|grammar|listening)$"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Select the next adaptive puzzle variant for the given skill."""
+    """Select the next puzzle from backend-owned fixed progression."""
     session = await session_service.get_session_or_none(db, session_id)
     if session is None:
         raise _error_response("SESSION_NOT_FOUND", f"Session {session_id} not found", 404)
 
     try:
-        data = await puzzle_service.get_next_item(db, session_id, skill)
+        data = await puzzle_service.get_next_puzzle(db, session_id)
     except ValueError as e:
         raise _error_response("SELECTION_ERROR", str(e))
 
     return ApiResponse(
         ok=True,
-        data=NextItemResponse(**data),
+        data=NextPuzzleResponse(**data),
         meta=_meta(session_id),
     )
 
@@ -165,6 +168,8 @@ async def submit_attempt(
             p_learned_before=data["p_learned_before"],
             p_learned_after=data["p_learned_after"],
             difficulty_tier=data["difficulty_tier"],
+            current_level_index=data["current_level_index"],
+            session_complete=data["session_complete"],
             mastery=MasterySnapshot(**data["mastery"]),
         ),
         meta=_meta(session_id),

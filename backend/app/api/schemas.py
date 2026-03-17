@@ -42,6 +42,7 @@ class ApiResponse(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=64)
+    condition: Literal["adaptive", "static"] = "adaptive"
 
 
 class MasterySnapshot(BaseModel):
@@ -54,6 +55,8 @@ class SessionCreated(BaseModel):
     session_id: uuid.UUID
     player_id: uuid.UUID
     session_token: str
+    condition: Literal["adaptive", "static"]
+    current_level_index: int
     mastery: MasterySnapshot
     current_room: str
 
@@ -76,22 +79,19 @@ class MasteryResponse(BaseModel):
 
 
 # ──────────────────────────────────────
-# GET /api/sessions/{id}/next-item
+# GET /api/sessions/{id}/next-puzzle
 # ──────────────────────────────────────
 
-class NextItemRequest(BaseModel):
-    skill: str = Field(..., pattern=r"^(vocabulary|grammar|listening)$")
-
-
-class NextItemResponse(BaseModel):
+class NextPuzzleResponse(BaseModel):
     puzzle_id: str
     variant_id: str
     skill: str
+    slot_order: int
     difficulty_tier: Literal["low", "mid", "high"]
     prompt_text: str
     audio_url: str | None = None
     time_limit_sec: int | None = None
-    fallback_used: bool
+    session_complete: bool
 
 
 # ──────────────────────────────────────
@@ -111,4 +111,6 @@ class AttemptFeedback(BaseModel):
     p_learned_before: float
     p_learned_after: float
     difficulty_tier: Literal["low", "mid", "high"]
+    current_level_index: int
+    session_complete: bool
     mastery: MasterySnapshot

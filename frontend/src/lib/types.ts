@@ -37,6 +37,8 @@ export interface SessionCreated {
   session_id: string;
   player_id: string;
   session_token: string;
+  condition: "adaptive" | "static";
+  current_level_index: number;
   mastery: MasterySnapshot;
   current_room: string;
 }
@@ -56,17 +58,18 @@ export interface MasteryResponse {
   summary: MasterySnapshot;
 }
 
-// ── GET /api/sessions/{id}/next-item ────────────────────
+// ── GET /api/sessions/{id}/next-puzzle ───────────────────
 
-export interface NextItemResponse {
+export interface NextPuzzleResponse {
   puzzle_id: string;
   variant_id: string;
   skill: string;
+  slot_order: number;
   difficulty_tier: DifficultyTier;
   prompt_text: string;
   audio_url: string | null;
   time_limit_sec: number | null;
-  fallback_used: boolean;
+  session_complete: boolean;
 }
 
 // ── POST /api/sessions/{id}/attempts ────────────────────
@@ -84,13 +87,11 @@ export interface AttemptFeedback {
   p_learned_before: number;
   p_learned_after: number;
   difficulty_tier: DifficultyTier;
+  current_level_index: number;
+  session_complete: boolean;
   mastery: MasterySnapshot;
 }
 
 // ── UI types (frontend-only) ────────────────────────────
 
 export type Skill = "vocabulary" | "grammar" | "listening";
-
-export type GamePhase = "vocabulary" | "grammar" | "listening" | "completion";
-
-export const SKILL_ORDER: Skill[] = ["vocabulary", "grammar", "listening"];

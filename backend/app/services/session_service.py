@@ -23,7 +23,9 @@ from ..db.models import (
 )
 
 
-async def create_session(db: AsyncSession, display_name: str) -> dict:
+async def create_session(
+    db: AsyncSession, display_name: str, condition: str = "adaptive"
+) -> dict:
     """
     Create a new player + game session + initial BKT estimates + game state.
 
@@ -40,6 +42,8 @@ async def create_session(db: AsyncSession, display_name: str) -> dict:
     # 2. Create game session
     session = GameSession(
         player_id=player.id,
+        condition=condition,
+        current_level_index=0,
         current_room="start_room",
     )
     db.add(session)
@@ -70,7 +74,12 @@ async def create_session(db: AsyncSession, display_name: str) -> dict:
     db.add(EventLog(
         session_id=session.id,
         event_type="session_created",
-        payload={"display_name": display_name, "map_id": session.map_id},
+        payload={
+            "display_name": display_name,
+            "map_id": session.map_id,
+            "condition": session.condition,
+            "current_level_index": session.current_level_index,
+        },
     ))
 
     await db.commit()
@@ -79,6 +88,8 @@ async def create_session(db: AsyncSession, display_name: str) -> dict:
         "session_id": session.id,
         "player_id": player.id,
         "session_token": player.session_token,
+        "condition": session.condition,
+        "current_level_index": session.current_level_index,
         "mastery": mastery,
         "current_room": session.current_room,
     }

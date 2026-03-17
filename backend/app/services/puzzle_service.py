@@ -13,92 +13,167 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from ..db.models import Attempt, EventLog, Puzzle, PuzzleVariant, Skill, SkillEstimate
-from ..engine.bkt_core import update_mastery
-from ..engine.content_selector import select_item
-from ..engine.selector_types import PuzzleItem
+from ..db.models import Attempt, EventLog, GameSession, Puzzle, PuzzleVariant, Skill
+from ..engine.bkt_core import select_difficulty, update_mastery
 
 from . import mastery_service
 
 
-# ──────────────────────────────────────
-# Catalog loading
-# ──────────────────────────────────────
+LEVEL_SCRIPT: list[tuple[str, int]] = [
+    ("vocabulary", 1),
+    ("vocabulary", 2),
+    ("vocabulary", 3),
+    ("grammar", 1),
+    ("grammar", 2),
+    ("grammar", 3),
+    ("listening", 1),
+    ("listening", 2),
+    ("listening", 3),
+]
 
-async def load_catalog(db: AsyncSession) -> list[PuzzleItem]:
-    """
-    Load all puzzle variants from DB and convert to engine PuzzleItem list.
+ROOM_ORDER = {
+    "start_room": 0,
+    "radio_room": 1,
+    "lab_room": 2,
+}
 
-    This is the bridge between the relational model and the stateless
-    content selector engine.
+
+def _level_info(level_index: int) -> tuple[str, int]:
+    if level_index < 0 or level_index >= len(LEVEL_SCRIPT):
+        raise ValueError(f"Invalid level index: {level_index}")
+    return LEVEL_SCRIPT[level_index]
+
+
+async def _resolve_level_puzzle(
+    db: AsyncSession,
+    skill_code: str,
+    slot_order: int,
+) -> Puzzle:
     """
+    Resolve the level puzzle by deterministic skill progression order.
+
+    For each skill, choose the slot_order-th puzzle in room progression:
+    start_room -> radio_room -> lab_room.
+    """
+    room_rank = case(
+        *[(Puzzle.room == room, rank) for room, rank in ROOM_ORDER.items()],
+        else_=999,
+    )
+
+    result = await db.execute(
+        select(Puzzle)
+        .join(Skill, Puzzle.skill_id == Skill.id)
+        .where(Skill.code == skill_code)
+        .order_by(room_rank, Puzzle.id)
+    )
+    puzzles = result.scalars().all()
+
+    target_index = slot_order - 1
+    if target_index < 0 or target_index >= len(puzzles):
+        raise ValueError(
+            f"No puzzle found for skill={skill_code}, slot_order={slot_order}"
+        )
+    return puzzles[target_index]
+
+
+async def _resolve_variant_for_tier(
+    db: AsyncSession,
+    puzzle_id: str,
+    difficulty_tier: str,
+) -> PuzzleVariant:
     result = await db.execute(
         select(PuzzleVariant)
-        .options(joinedload(PuzzleVariant.puzzle).joinedload(Puzzle.skill))
-    )
-    rows = result.scalars().all()
-
-    return [
-        PuzzleItem(
-            item_id=v.id,
-            puzzle_id=v.puzzle_id,
-            skill=v.puzzle.skill.code,
-            difficulty=v.difficulty_tier,  # type: ignore[arg-type]
-            weight=1.0,
+        .where(
+            PuzzleVariant.puzzle_id == puzzle_id,
+            PuzzleVariant.difficulty_tier == difficulty_tier,
         )
-        for v in rows
-    ]
+    )
+    variant = result.scalar_one_or_none()
+    if variant is not None:
+        return variant
+
+    # Safe fallback for incomplete seed data.
+    fallback_result = await db.execute(
+        select(PuzzleVariant)
+        .where(PuzzleVariant.puzzle_id == puzzle_id)
+        .order_by(PuzzleVariant.id)
+    )
+    fallback = fallback_result.scalars().first()
+    if fallback is None:
+        raise ValueError(f"No variants found for puzzle_id={puzzle_id}")
+    return fallback
+
+
+async def _difficulty_for_level(
+    db: AsyncSession,
+    session: GameSession,
+    skill_code: str,
+    slot_order: int,
+) -> str:
+    # Slot 1 is always mid.
+    if slot_order == 1:
+        return "mid"
+
+    # Static condition is always mid.
+    if session.condition == "static":
+        return "mid"
+
+    # Adaptive condition follows BKT-driven tier.
+    estimate = await mastery_service.get_skill_estimate(db, session.id, skill_code)
+    if estimate is None:
+        raise ValueError(f"No estimate for session={session.id}, skill={skill_code}")
+    return select_difficulty(estimate.p_ln)
 
 
 # ──────────────────────────────────────
-# Next-item selection
+# Next puzzle selection
 # ──────────────────────────────────────
 
-async def get_next_item(
+async def get_next_puzzle(
     db: AsyncSession,
     session_id: uuid.UUID,
-    skill_code: str,
-    recent_ids: list[str] | None = None,
 ) -> dict:
     """
-    Select the next puzzle variant adaptively.
+    Select the next puzzle from fixed 9-level progression.
 
     Returns a dict with variant details ready to be sent to the frontend.
     """
-    # 1. Load current mastery for the skill
-    estimate = await mastery_service.get_skill_estimate(db, session_id, skill_code)
-    if estimate is None:
-        raise ValueError(f"No skill estimate found for session={session_id}, skill={skill_code}")
+    session = await db.get(GameSession, session_id)
+    if session is None:
+        raise ValueError(f"Session {session_id} not found")
 
-    # 2. Load full catalog
-    catalog = await load_catalog(db)
+    if session.current_level_index >= len(LEVEL_SCRIPT):
+        return {
+            "puzzle_id": "",
+            "variant_id": "",
+            "skill": "",
+            "slot_order": 0,
+            "difficulty_tier": "mid",
+            "prompt_text": "",
+            "audio_url": None,
+            "time_limit_sec": None,
+            "session_complete": True,
+        }
 
-    # 3. Run content selector engine
-    selection = select_item(
-        catalog=catalog,
-        skill=skill_code,
-        mastery=estimate.p_ln,
-        recent_ids=recent_ids if recent_ids is not None else [],
-    )
-
-    # 4. Fetch variant details from DB
-    variant = await db.get(PuzzleVariant, selection.selected.item_id)
-    if variant is None:
-        raise ValueError(f"Variant {selection.selected.item_id} not found in DB")
+    skill_code, slot_order = _level_info(session.current_level_index)
+    puzzle = await _resolve_level_puzzle(db, skill_code, slot_order)
+    difficulty_tier = await _difficulty_for_level(db, session, skill_code, slot_order)
+    variant = await _resolve_variant_for_tier(db, puzzle.id, difficulty_tier)
 
     return {
-        "puzzle_id": variant.puzzle_id,
+        "puzzle_id": puzzle.id,
         "variant_id": variant.id,
         "skill": skill_code,
+        "slot_order": slot_order,
         "difficulty_tier": variant.difficulty_tier,
         "prompt_text": variant.prompt_text,
         "audio_url": variant.audio_url,
         "time_limit_sec": variant.time_limit_sec,
-        "fallback_used": selection.fallback_used,
+        "session_complete": False,
     }
 
 
@@ -199,9 +274,29 @@ async def submit_attempt(
         },
     ))
 
+    # 10. Advance session progression index
+    session = await db.get(GameSession, session_id)
+    if session is None:
+        raise ValueError(f"Session {session_id} not found")
+
+    session.current_level_index += 1
+    session_complete = session.current_level_index >= len(LEVEL_SCRIPT)
+    if session_complete:
+        session.status = "completed"
+        session.finished_at = datetime.now(timezone.utc)
+
+    db.add(EventLog(
+        session_id=session_id,
+        event_type="session_progressed",
+        payload={
+            "current_level_index": session.current_level_index,
+            "session_complete": session_complete,
+        },
+    ))
+
     await db.commit()
 
-    # 10. Get full mastery snapshot for response
+    # 11. Get full mastery snapshot for response
     mastery_snap = await mastery_service.get_mastery_snapshot(db, session_id)
 
     return {
@@ -210,5 +305,7 @@ async def submit_attempt(
         "p_learned_before": bkt_result.p_learned_before,
         "p_learned_after": bkt_result.p_learned_after,
         "difficulty_tier": bkt_result.recommended_tier,
+        "current_level_index": session.current_level_index,
+        "session_complete": session_complete,
         "mastery": mastery_snap,
     }
