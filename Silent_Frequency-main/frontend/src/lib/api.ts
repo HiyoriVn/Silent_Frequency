@@ -9,9 +9,8 @@ import type {
   ApiResponse,
   SessionCreated,
   MasteryResponse,
-  NextItemResponse,
+  NextPuzzleResponse,
   AttemptFeedback,
-  Skill,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -48,10 +47,13 @@ async function request<T>(
 
 // ── endpoints ────────────────────────────────────────────
 
-export async function createSession(displayName: string) {
+export async function createSession(
+  displayName: string,
+  condition: "adaptive" | "static" = "adaptive",
+) {
   return request<SessionCreated>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ display_name: displayName }),
+    body: JSON.stringify({ display_name: displayName, condition }),
   });
 }
 
@@ -59,10 +61,8 @@ export async function getMastery(sessionId: string) {
   return request<MasteryResponse>(`/api/sessions/${sessionId}/mastery`);
 }
 
-export async function getNextItem(sessionId: string, skill: Skill) {
-  return request<NextItemResponse>(
-    `/api/sessions/${sessionId}/next-item?skill=${skill}`,
-  );
+export async function getNextPuzzle(sessionId: string) {
+  return request<NextPuzzleResponse>(`/api/sessions/${sessionId}/next-puzzle`);
 }
 
 export async function submitAttempt(

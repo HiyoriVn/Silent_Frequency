@@ -1,8 +1,11 @@
 /**
  * Silent Frequency — Main Game Page
  *
- * Orchestrates the 4 adaptive phases:
- *   1. Vocabulary  2. Grammar  3. Listening  4. Completion
+ * Backend-owned session flow page.
+ * UI states:
+ *   1) no session => lobby
+ *   2) active session => current puzzle
+ *   3) completed session => completion summary
  */
 
 "use client";
@@ -17,7 +20,14 @@ import ListeningPhase from "@/components/phases/ListeningPhase";
 import CompletionPhase from "@/components/phases/CompletionPhase";
 
 export default function Home() {
-  const { sessionId, phase, loading, error, startSession } = useGameStore();
+  const {
+    sessionId,
+    sessionComplete,
+    currentItem,
+    loading,
+    error,
+    startSession,
+  } = useGameStore();
   const { startAmbient } = useAudio();
   const [nameInput, setNameInput] = useState("");
 
@@ -71,41 +81,46 @@ export default function Home() {
     );
   }
 
-  // ── Phase router ──────────────────────────────────────
+  // ── Completion state ──────────────────────────────────
+  if (sessionComplete) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-12">
+        <CompletionPhase />
+      </main>
+    );
+  }
+
+  // ── Active puzzle state ───────────────────────────────
+  const skill = currentItem?.skill;
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-12">
-      {/* Phase indicator */}
+      {/* Backend level indicator */}
       <div className="flex items-center gap-2 text-xs text-neutral-500">
-        {["vocabulary", "grammar", "listening", "completion"].map((p, i) => (
-          <React.Fragment key={p}>
-            {i > 0 && <span className="text-neutral-700">—</span>}
-            <span
-              className={
-                p === phase
-                  ? "font-semibold uppercase tracking-wider text-cyan-400"
-                  : "uppercase tracking-wider"
-              }
-            >
-              {p}
-            </span>
-          </React.Fragment>
-        ))}
+        <span className="uppercase tracking-wider">Live Session</span>
+        {skill && <span className="text-neutral-700">—</span>}
+        {skill && (
+          <span className="font-semibold uppercase tracking-wider text-cyan-400">
+            {skill}
+          </span>
+        )}
       </div>
 
       {/* Loading state */}
-      {loading &&
-        !useGameStore.getState().currentItem &&
-        phase !== "completion" && (
-          <p className="animate-pulse text-sm text-neutral-500">
-            Decoding signal…
-          </p>
-        )}
+      {loading && !currentItem && (
+        <p className="animate-pulse text-sm text-neutral-500">
+          Decoding signal…
+        </p>
+      )}
 
-      {/* Phase components */}
-      {phase === "vocabulary" && <VocabularyPhase />}
-      {phase === "grammar" && <GrammarPhase />}
-      {phase === "listening" && <ListeningPhase />}
-      {phase === "completion" && <CompletionPhase />}
+      {/* Puzzle component chosen from backend-provided skill */}
+      {skill === "vocabulary" && <VocabularyPhase />}
+      {skill === "grammar" && <GrammarPhase />}
+      {skill === "listening" && <ListeningPhase />}
+
+      {!loading && !currentItem && !sessionComplete && (
+        <p className="text-sm text-neutral-500">Waiting for next puzzle...</p>
+      )}
     </main>
   );
 }

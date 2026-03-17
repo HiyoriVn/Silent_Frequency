@@ -18,8 +18,7 @@ export default function GrammarPhase() {
     lastFeedback,
     loading,
     submitAnswer,
-    advancePhase,
-    fetchNextItem,
+    fetchNextPuzzle,
   } = useGameStore();
   const [input, setInput] = useState("");
 
@@ -35,11 +34,7 @@ export default function GrammarPhase() {
   };
 
   const handleNext = () => {
-    if (lastFeedback && lastFeedback.p_learned_after >= 0.7) {
-      advancePhase();
-    } else {
-      fetchNextItem();
-    }
+    fetchNextPuzzle();
   };
 
   return (
@@ -103,9 +98,7 @@ export default function GrammarPhase() {
             onClick={handleNext}
             className="rounded-lg bg-neutral-700 px-6 py-2 text-sm text-neutral-200 transition hover:bg-neutral-600"
           >
-            {lastFeedback.p_learned_after >= 0.7
-              ? "Next Phase →"
-              : "Next Puzzle →"}
+            Next Puzzle →
           </button>
         </div>
       )}

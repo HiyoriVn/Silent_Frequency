@@ -8,13 +8,10 @@
 
 import { create } from "zustand";
 import type {
-  GamePhase,
   MasterySnapshot,
-  NextItemResponse,
+  NextPuzzleResponse,
   AttemptFeedback,
-  Skill,
 } from "@/lib/types";
-import { SKILL_ORDER } from "@/lib/types";
 import * as api from "@/lib/api";
 
 // ── State shape ──────────────────────────────────────────
@@ -23,14 +20,15 @@ interface GameState {
   // Session
   sessionId: string | null;
   playerName: string;
+  condition: "adaptive" | "static";
+  currentLevelIndex: number;
+  sessionComplete: boolean;
 
   // Mastery (server mirror)
   mastery: MasterySnapshot;
 
   // Current puzzle
-  currentItem: NextItemResponse | null;
-  phase: GamePhase;
-  phaseIndex: number; // 0-3
+  currentItem: NextPuzzleResponse | null;
 
   // UI
   loading: boolean;
@@ -42,9 +40,8 @@ interface GameState {
 
   // Actions
   startSession: (name: string) => Promise<void>;
-  fetchNextItem: () => Promise<void>;
+  fetchNextPuzzle: () => Promise<void>;
   submitAnswer: (answer: string, hintCount?: number) => Promise<void>;
-  advancePhase: () => void;
   reset: () => void;
 }
 
@@ -59,10 +56,11 @@ const INITIAL_MASTERY: MasterySnapshot = {
 export const useGameStore = create<GameState>((set, get) => ({
   sessionId: null,
   playerName: "",
+  condition: "adaptive",
+  currentLevelIndex: 0,
+  sessionComplete: false,
   mastery: { ...INITIAL_MASTERY },
   currentItem: null,
-  phase: "vocabulary",
-  phaseIndex: 0,
   loading: false,
   error: null,
   lastFeedback: null,
@@ -78,28 +76,39 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     set({
       sessionId: res.data.session_id,
+      condition: res.data.condition,
+      currentLevelIndex: res.data.current_level_index,
+      sessionComplete: false,
       mastery: res.data.mastery,
       loading: false,
-      phase: "vocabulary",
-      phaseIndex: 0,
     });
     // Immediately fetch first puzzle
-    await get().fetchNextItem();
+    await get().fetchNextPuzzle();
   },
 
-  // ── Fetch next item ────────────────────────────────────
-  fetchNextItem: async () => {
-    const { sessionId, phase } = get();
-    if (!sessionId || phase === "completion") return;
+  // ── Fetch next puzzle ──────────────────────────────────
+  fetchNextPuzzle: async () => {
+    const { sessionId, sessionComplete } = get();
+    if (!sessionId || sessionComplete) return;
 
-    const skill = phase as Skill;
     set({ loading: true, error: null, currentItem: null, lastFeedback: null });
 
-    const res = await api.getNextItem(sessionId, skill);
+    const res = await api.getNextPuzzle(sessionId);
     if (!res.ok || !res.data) {
       set({ loading: false, error: res.error?.message ?? "No items" });
       return;
     }
+
+    if (res.data.session_complete) {
+      set({
+        currentItem: null,
+        sessionComplete: true,
+        loading: false,
+        startTime: null,
+      });
+      return;
+    }
+
     set({
       currentItem: res.data,
       loading: false,
@@ -130,20 +139,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       lastFeedback: res.data,
       mastery: res.data.mastery,
+      currentLevelIndex: res.data.current_level_index,
+      sessionComplete: res.data.session_complete,
+      currentItem: res.data.session_complete ? null : currentItem,
       loading: false,
     });
-  },
-
-  // ── Advance phase ──────────────────────────────────────
-  advancePhase: () => {
-    const { phaseIndex } = get();
-    const next = phaseIndex + 1;
-    if (next >= SKILL_ORDER.length) {
-      set({ phase: "completion", phaseIndex: next, currentItem: null });
-    } else {
-      set({ phase: SKILL_ORDER[next], phaseIndex: next });
-      get().fetchNextItem();
-    }
   },
 
   // ── Reset ──────────────────────────────────────────────
@@ -151,10 +151,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       sessionId: null,
       playerName: "",
+      condition: "adaptive",
+      currentLevelIndex: 0,
+      sessionComplete: false,
       mastery: { ...INITIAL_MASTERY },
       currentItem: null,
-      phase: "vocabulary",
-      phaseIndex: 0,
       loading: false,
       error: null,
       lastFeedback: null,

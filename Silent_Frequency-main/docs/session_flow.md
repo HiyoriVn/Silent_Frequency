@@ -99,3 +99,43 @@ For student maintainers:
 6. Validate API contract changes with backend and frontend types together.
 
 This document describes the current Phase 2 session-flow refactor only. It does not introduce engine redesign or new gameplay features.
+
+## Frontend Responsibilities
+
+The frontend is now responsible for display and input only.
+
+What frontend should do:
+
+1. Start a session with name and condition.
+2. Ask backend for the next puzzle (`GET /next-puzzle`).
+3. Render the puzzle returned by backend.
+4. Submit player answer.
+5. Render feedback and completion state from backend fields.
+
+What frontend should not do:
+
+1. Decide next skill.
+2. Decide progression order.
+3. Decide when a session is complete.
+
+## Frontend Interaction Flow
+
+Simple interaction cycle:
+
+1. No session: show start form.
+2. Active session: request next puzzle and render the returned skill screen.
+3. Submit answer: show correctness and updated mastery.
+4. Request next puzzle again unless backend marks completion.
+5. If `session_complete = true`, show completion screen.
+
+This keeps all progression logic in backend services.
+
+## Frontend Maintainability Notes
+
+For student maintainers:
+
+1. Keep store fields aligned with backend contract (`condition`, `currentLevelIndex`, `sessionComplete`).
+2. Avoid adding phase-order logic back into components.
+3. Keep API client thin and endpoint-focused.
+4. Reuse shared puzzle UI wrappers instead of duplicating state logic.
+5. Prefer one source of truth: backend progression response fields.
