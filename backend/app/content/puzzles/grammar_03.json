@@ -1,0 +1,40 @@
+{
+  "puzzle_id": "lab_grammar_report",
+  "skill": "grammar",
+  "slot_order": 3,
+  "title": "Complete the Lab Report",
+  "room": "lab_room",
+  "mechanic": "sentence_correction",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Choose the correct verb: 'The sample ___ contaminated.' (is/are)",
+      "answer_type": "text",
+      "correct_answers": ["is"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["'Sample' is singular.", "Use singular present form."]
+    },
+    "mid": {
+      "prompt_text": "Correct the sentence: 'Each of the samples have been tested twice'.",
+      "answer_type": "text",
+      "correct_answers": ["each of the samples has been tested twice"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["The head word is 'Each'.", "Use singular auxiliary."]
+    },
+    "high": {
+      "prompt_text": "Correct the sentence: 'The data suggests that neither compound are stable under heat'.",
+      "answer_type": "text",
+      "correct_answers": [
+        "the data suggest that neither compound is stable under heat"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Academic English often treats 'data' as plural.",
+        "'Neither compound' takes singular verb."
+      ]
+    }
+  }
+}

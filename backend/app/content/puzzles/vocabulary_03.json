@@ -1,0 +1,38 @@
+{
+  "puzzle_id": "lab_vocab_chemical",
+  "skill": "vocabulary",
+  "slot_order": 3,
+  "title": "Interpret Chemical Labels",
+  "room": "lab_room",
+  "mechanic": "translation",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "What is H2O?",
+      "answer_type": "text",
+      "correct_answers": ["water"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["It is common and drinkable.", "Two hydrogen, one oxygen."]
+    },
+    "mid": {
+      "prompt_text": "Translate: 'sodium chloride solution'.",
+      "answer_type": "text",
+      "correct_answers": ["dung dich natri clorua", "dung dich muoi"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Sodium chloride is table salt.",
+        "Keep the phrase as a noun group."
+      ]
+    },
+    "high": {
+      "prompt_text": "Translate: 'diluted hydrochloric acid, reagent grade'.",
+      "answer_type": "text",
+      "correct_answers": ["axit clohidric loang cap thuoc thu"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["Translate 'diluted' first.", "Then add the quality level."]
+    }
+  }
+}

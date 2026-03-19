@@ -192,7 +192,7 @@ class PuzzleVariant(Base):
     )
     difficulty_tier: Mapped[str] = mapped_column(String(8), nullable=False)
     prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
-    correct_answers: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    correct_answers: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     audio_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     time_limit_sec: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     metadata_: Mapped[dict] = mapped_column(

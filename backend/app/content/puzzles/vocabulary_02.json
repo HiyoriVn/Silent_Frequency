@@ -1,0 +1,46 @@
+{
+  "puzzle_id": "radio_vocab_decode",
+  "skill": "vocabulary",
+  "slot_order": 2,
+  "title": "Decode the Radio Label",
+  "room": "radio_room",
+  "mechanic": "translation",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "What does 'frequence' mean in English?",
+      "answer_type": "text",
+      "correct_answers": ["frequency"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["It is used in radio.", "It starts with 'f'."]
+    },
+    "mid": {
+      "prompt_text": "Translate: 'Reglez la frequence silencieuse'.",
+      "answer_type": "text",
+      "correct_answers": [
+        "tune the silent frequency",
+        "set the silent frequency"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Reglez means set/tune.",
+        "Frequence silencieuse is the key phrase."
+      ]
+    },
+    "high": {
+      "prompt_text": "Translate: 'La frequence silencieuse ne repond plus depuis minuit'.",
+      "answer_type": "text",
+      "correct_answers": [
+        "the silent frequency has not responded since midnight"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Ne ... plus means no longer.",
+        "Depuis minuit means since midnight."
+      ]
+    }
+  }
+}

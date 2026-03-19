@@ -1,0 +1,40 @@
+{
+  "puzzle_id": "radio_grammar_msg",
+  "skill": "grammar",
+  "slot_order": 2,
+  "title": "Reconstruct Intercepted Message",
+  "room": "radio_room",
+  "mechanic": "sentence_correction",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Choose the correct form: 'The message ___ intercepted.' (was/were)",
+      "answer_type": "text",
+      "correct_answers": ["was"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["'Message' is singular.", "Use past passive singular."]
+    },
+    "mid": {
+      "prompt_text": "Reorder into a sentence: 'intercepted / was / last night / the transmission'.",
+      "answer_type": "text",
+      "correct_answers": ["the transmission was intercepted last night"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["Start with the subject.", "Then use passive verb phrase."]
+    },
+    "high": {
+      "prompt_text": "Correct the sentence: 'The signal, along with its echoes, have been lost for hours'.",
+      "answer_type": "text",
+      "correct_answers": [
+        "the signal, along with its echoes, has been lost for hours"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Main subject is 'signal'.",
+        "Ignore the interrupting phrase for agreement."
+      ]
+    }
+  }
+}

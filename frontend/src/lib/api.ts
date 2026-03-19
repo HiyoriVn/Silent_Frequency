@@ -13,7 +13,8 @@ import type {
   AttemptFeedback,
 } from "./types";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+console.log("API URL:", BASE);
 
 // ── helpers ──────────────────────────────────────────────
 

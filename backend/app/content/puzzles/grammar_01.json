@@ -1,0 +1,46 @@
+{
+  "puzzle_id": "start_grammar_door",
+  "skill": "grammar",
+  "slot_order": 1,
+  "title": "Fix the Door Sentence",
+  "room": "start_room",
+  "mechanic": "sentence_correction",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Choose the correct word: 'She ___ to the lab every day.' (go/goes)",
+      "answer_type": "text",
+      "correct_answers": ["goes"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Subject is 'She'.",
+        "Use present simple third person singular."
+      ]
+    },
+    "mid": {
+      "prompt_text": "Correct the sentence: 'The researchers has found a new signal'.",
+      "answer_type": "text",
+      "correct_answers": ["the researchers have found a new signal"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Check subject-verb agreement.",
+        "Plural subject needs plural auxiliary."
+      ]
+    },
+    "high": {
+      "prompt_text": "Correct the sentence: 'Neither the signal nor the frequency were been identified yet'.",
+      "answer_type": "text",
+      "correct_answers": [
+        "neither the signal nor the frequency has been identified yet"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Focus on the verb phrase form.",
+        "After 'neither ... nor', the verb agrees with the nearer subject."
+      ]
+    }
+  }
+}

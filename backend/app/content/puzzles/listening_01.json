@@ -1,0 +1,38 @@
+{
+  "puzzle_id": "start_listen_code",
+  "skill": "listening",
+  "slot_order": 1,
+  "title": "Enter the Access Code",
+  "room": "start_room",
+  "mechanic": "audio_comprehension",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Listen and type the 3-digit code.",
+      "answer_type": "text",
+      "correct_answers": ["472"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["There are three numbers.", "The middle digit is 7."]
+    },
+    "mid": {
+      "prompt_text": "Listen and type the 5-digit code in order.",
+      "answer_type": "text",
+      "correct_answers": ["47239"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["Do not reorder the digits.", "The code starts with 4."]
+    },
+    "high": {
+      "prompt_text": "Listen to the sequence and type it in reverse order.",
+      "answer_type": "text",
+      "correct_answers": ["93274"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Reverse the full sequence.",
+        "Last heard becomes first written."
+      ]
+    }
+  }
+}

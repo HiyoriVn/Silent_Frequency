@@ -1,0 +1,43 @@
+{
+  "puzzle_id": "radio_listen_freq",
+  "skill": "listening",
+  "slot_order": 2,
+  "title": "Identify Broadcast Frequency",
+  "room": "radio_room",
+  "mechanic": "audio_comprehension",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Listen and type the frequency number.",
+      "answer_type": "text",
+      "correct_answers": ["91.7"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["It is in FM format.", "It contains one decimal point."]
+    },
+    "mid": {
+      "prompt_text": "Listen and type the frequency and meeting time.",
+      "answer_type": "text",
+      "correct_answers": ["91.7 at midnight", "91.7 midnight"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Capture two details: number and time.",
+        "Time is late at night."
+      ]
+    },
+    "high": {
+      "prompt_text": "Listen and write the full broadcast instruction.",
+      "answer_type": "text",
+      "correct_answers": [
+        "tune to 91.7 at midnight and wait for the silent frequency"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Start with the action verb.",
+        "Include both frequency and condition."
+      ]
+    }
+  }
+}

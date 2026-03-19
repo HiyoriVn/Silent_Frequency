@@ -1,0 +1,38 @@
+{
+  "puzzle_id": "start_vocab_sign",
+  "skill": "vocabulary",
+  "slot_order": 1,
+  "title": "Translate the Warning Sign",
+  "room": "start_room",
+  "mechanic": "translation",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "What does 'Danger' mean?",
+      "answer_type": "text",
+      "correct_answers": ["nguy hiem", "danger"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["It warns about risk.", "Start with: nguy..."]
+    },
+    "mid": {
+      "prompt_text": "Translate: 'Authorized personnel only'.",
+      "answer_type": "text",
+      "correct_answers": ["chi nhan vien duoc phep", "chi nguoi duoc uy quyen"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["Think about permission.", "Focus on 'only'."]
+    },
+    "high": {
+      "prompt_text": "Translate: 'Caution: biohazard material beyond this point'.",
+      "answer_type": "text",
+      "correct_answers": ["can than: vat lieu nguy hiem sinh hoc phia truoc"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "Translate the warning tone first.",
+        "Then translate 'biohazard material'."
+      ]
+    }
+  }
+}

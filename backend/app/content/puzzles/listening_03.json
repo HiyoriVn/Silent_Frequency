@@ -1,0 +1,40 @@
+{
+  "puzzle_id": "lab_listen_alarm",
+  "skill": "listening",
+  "slot_order": 3,
+  "title": "Interpret Alarm Announcement",
+  "room": "lab_room",
+  "mechanic": "audio_comprehension",
+  "max_hints": 2,
+  "variants": {
+    "low": {
+      "prompt_text": "Listen and type the room number in the alert.",
+      "answer_type": "text",
+      "correct_answers": ["7", "room 7"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["It is a single digit.", "The room is announced once."]
+    },
+    "mid": {
+      "prompt_text": "Listen and type the evacuation instruction.",
+      "answer_type": "text",
+      "correct_answers": ["evacuate room 7 immediately"],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": ["Start with the command verb.", "Include room and urgency."]
+    },
+    "high": {
+      "prompt_text": "Listen and write the full emergency protocol announcement.",
+      "answer_type": "text",
+      "correct_answers": [
+        "attention all personnel: evacuate room 7 immediately due to chemical spill, proceed to assembly point b"
+      ],
+      "audio_url": null,
+      "time_limit_sec": null,
+      "hints": [
+        "There are two instructions in sequence.",
+        "Do not omit the cause phrase."
+      ]
+    }
+  }
+}
