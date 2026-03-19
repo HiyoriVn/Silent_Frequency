@@ -115,6 +115,241 @@ def _validate_puzzle_doc(doc: dict[str, Any]) -> None:
                 f"{source}: tier '{tier}' has more hints than max_hints"
             )
 
+        interaction = variant.get("interaction")
+        if interaction is not None:
+            _validate_interaction_metadata(
+                interaction=interaction,
+                source=source,
+                tier=tier,
+            )
+
+
+def _require_keys(
+    data: dict[str, Any],
+    *,
+    required: set[str],
+    source: str,
+    context: str,
+) -> None:
+    missing = required - set(data.keys())
+    if missing:
+        raise ValueError(f"{source}: {context} missing keys: {sorted(missing)}")
+
+
+def _reject_unknown_keys(
+    data: dict[str, Any],
+    *,
+    allowed: set[str],
+    source: str,
+    context: str,
+) -> None:
+    extras = set(data.keys()) - allowed
+    if extras:
+        raise ValueError(f"{source}: {context} has unsupported keys: {sorted(extras)}")
+
+
+def _validate_norm_number(
+    value: Any,
+    *,
+    source: str,
+    context: str,
+    allow_zero: bool,
+) -> None:
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{source}: {context} must be a number")
+    if value < 0 or value > 1:
+        raise ValueError(f"{source}: {context} must be in [0, 1]")
+    if not allow_zero and value == 0:
+        raise ValueError(f"{source}: {context} must be > 0")
+
+
+def _validate_interaction_metadata(
+    *,
+    interaction: Any,
+    source: str,
+    tier: str,
+) -> None:
+    ctx = f"tier '{tier}' interaction"
+
+    if not isinstance(interaction, dict):
+        raise ValueError(f"{source}: {ctx} must be an object")
+
+    allowed_top = {
+        "interaction_version",
+        "scene",
+        "hotspots",
+        "prompts",
+        "ui_hints",
+    }
+    _require_keys(
+        interaction,
+        required={"interaction_version", "scene", "hotspots", "prompts"},
+        source=source,
+        context=ctx,
+    )
+    _reject_unknown_keys(
+        interaction,
+        allowed=allowed_top,
+        source=source,
+        context=ctx,
+    )
+
+    if interaction["interaction_version"] != 1:
+        raise ValueError(f"{source}: {ctx} interaction_version must be 1")
+
+    scene = interaction["scene"]
+    if not isinstance(scene, dict):
+        raise ValueError(f"{source}: {ctx}.scene must be an object")
+    _require_keys(
+        scene,
+        required={"scene_id", "asset_key"},
+        source=source,
+        context=f"{ctx}.scene",
+    )
+    _reject_unknown_keys(
+        scene,
+        allowed={"scene_id", "asset_key", "instruction_text"},
+        source=source,
+        context=f"{ctx}.scene",
+    )
+    if not isinstance(scene["scene_id"], str) or not scene["scene_id"].strip():
+        raise ValueError(f"{source}: {ctx}.scene.scene_id must be a non-empty string")
+    if not isinstance(scene["asset_key"], str) or not scene["asset_key"].strip():
+        raise ValueError(f"{source}: {ctx}.scene.asset_key must be a non-empty string")
+
+    hotspots = interaction["hotspots"]
+    if not isinstance(hotspots, list):
+        raise ValueError(f"{source}: {ctx}.hotspots must be a list")
+    prompt_hotspot_refs: list[str] = []
+    for idx, hotspot in enumerate(hotspots):
+        hotspot_ctx = f"{ctx}.hotspots[{idx}]"
+        if not isinstance(hotspot, dict):
+            raise ValueError(f"{source}: {hotspot_ctx} must be an object")
+        _require_keys(
+            hotspot,
+            required={"hotspot_id", "shape_type", "shape", "trigger"},
+            source=source,
+            context=hotspot_ctx,
+        )
+        _reject_unknown_keys(
+            hotspot,
+            allowed={"hotspot_id", "label", "shape_type", "shape", "trigger"},
+            source=source,
+            context=hotspot_ctx,
+        )
+        if not isinstance(hotspot["hotspot_id"], str) or not hotspot["hotspot_id"].strip():
+            raise ValueError(f"{source}: {hotspot_ctx}.hotspot_id must be a non-empty string")
+
+        if hotspot["shape_type"] != "rect":
+            raise ValueError(f"{source}: {hotspot_ctx}.shape_type must be 'rect'")
+
+        shape = hotspot["shape"]
+        if not isinstance(shape, dict):
+            raise ValueError(f"{source}: {hotspot_ctx}.shape must be an object")
+        _require_keys(
+            shape,
+            required={"x", "y", "width", "height"},
+            source=source,
+            context=f"{hotspot_ctx}.shape",
+        )
+        _reject_unknown_keys(
+            shape,
+            allowed={"x", "y", "width", "height"},
+            source=source,
+            context=f"{hotspot_ctx}.shape",
+        )
+        _validate_norm_number(shape["x"], source=source, context=f"{hotspot_ctx}.shape.x", allow_zero=True)
+        _validate_norm_number(shape["y"], source=source, context=f"{hotspot_ctx}.shape.y", allow_zero=True)
+        _validate_norm_number(shape["width"], source=source, context=f"{hotspot_ctx}.shape.width", allow_zero=False)
+        _validate_norm_number(shape["height"], source=source, context=f"{hotspot_ctx}.shape.height", allow_zero=False)
+
+        trigger = hotspot["trigger"]
+        if not isinstance(trigger, dict):
+            raise ValueError(f"{source}: {hotspot_ctx}.trigger must be an object")
+        _require_keys(
+            trigger,
+            required={"trigger_type"},
+            source=source,
+            context=f"{hotspot_ctx}.trigger",
+        )
+        _reject_unknown_keys(
+            trigger,
+            allowed={"trigger_type", "prompt_ref"},
+            source=source,
+            context=f"{hotspot_ctx}.trigger",
+        )
+        if trigger["trigger_type"] != "click":
+            raise ValueError(f"{source}: {hotspot_ctx}.trigger.trigger_type must be 'click'")
+
+        if "prompt_ref" in trigger and trigger["prompt_ref"] is not None:
+            prompt_ref = trigger["prompt_ref"]
+            if not isinstance(prompt_ref, str) or not prompt_ref.strip():
+                raise ValueError(f"{source}: {hotspot_ctx}.trigger.prompt_ref must be a non-empty string when provided")
+            prompt_hotspot_refs.append(prompt_ref)
+
+    prompts = interaction["prompts"]
+    if not isinstance(prompts, dict):
+        raise ValueError(f"{source}: {ctx}.prompts must be an object")
+    if not prompts:
+        raise ValueError(f"{source}: {ctx}.prompts must not be empty")
+
+    if len(prompt_hotspot_refs) != 1:
+        raise ValueError(f"{source}: {ctx} must have exactly one hotspot with trigger.prompt_ref")
+
+    for prompt_ref in prompt_hotspot_refs:
+        if prompt_ref not in prompts:
+            raise ValueError(f"{source}: {ctx}.prompts missing key referenced by prompt_ref='{prompt_ref}'")
+
+    for prompt_ref, prompt in prompts.items():
+        prompt_ctx = f"{ctx}.prompts['{prompt_ref}']"
+        if not isinstance(prompt, dict):
+            raise ValueError(f"{source}: {prompt_ctx} must be an object")
+        _require_keys(
+            prompt,
+            required={"prompt_text", "answer_type", "correct_answers"},
+            source=source,
+            context=prompt_ctx,
+        )
+        _reject_unknown_keys(
+            prompt,
+            allowed={"prompt_text", "answer_type", "correct_answers", "max_attempt_chars"},
+            source=source,
+            context=prompt_ctx,
+        )
+        if prompt["answer_type"] != "text":
+            raise ValueError(f"{source}: {prompt_ctx}.answer_type must be 'text'")
+        if not isinstance(prompt["prompt_text"], str) or not prompt["prompt_text"].strip():
+            raise ValueError(f"{source}: {prompt_ctx}.prompt_text must be a non-empty string")
+        prompt_answers = prompt["correct_answers"]
+        if not isinstance(prompt_answers, list) or not prompt_answers:
+            raise ValueError(f"{source}: {prompt_ctx}.correct_answers must be a non-empty list")
+        if any(not isinstance(ans, str) or not ans.strip() for ans in prompt_answers):
+            raise ValueError(f"{source}: {prompt_ctx}.correct_answers must contain non-empty strings")
+
+    forbidden_keys = {
+        "script",
+        "scripts",
+        "condition",
+        "conditions",
+        "state_machine",
+        "states",
+        "transitions",
+        "rules",
+        "actions",
+    }
+
+    def _scan_forbidden(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in forbidden_keys:
+                    raise ValueError(f"{source}: {ctx} contains forbidden key '{key}' at {path}")
+                _scan_forbidden(child, f"{path}.{key}")
+        elif isinstance(value, list):
+            for idx, child in enumerate(value):
+                _scan_forbidden(child, f"{path}[{idx}]")
+
+    _scan_forbidden(interaction, f"{ctx}")
+
 
 def _build_seed_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     docs = _load_puzzle_docs()
@@ -159,6 +394,16 @@ def _build_seed_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
         for tier in REQUIRED_TIERS:
             variant = doc["variants"][tier]
+            interaction = variant.pop("interaction", None)
+            variant_metadata = {
+                "answer_type": variant["answer_type"],
+                "hints": variant["hints"],
+                "mechanic": doc["mechanic"],
+                "source_file": doc["__source_file"],
+            }
+            if interaction is not None:
+                variant_metadata["interaction"] = interaction
+
             variants.append(
                 {
                     "id": f"{puzzle_id}__{tier}",
@@ -168,12 +413,7 @@ def _build_seed_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                     "correct_answers": variant["correct_answers"],
                     "audio_url": variant["audio_url"],
                     "time_limit_sec": variant["time_limit_sec"],
-                    "metadata": {
-                        "answer_type": variant["answer_type"],
-                        "hints": variant["hints"],
-                        "mechanic": doc["mechanic"],
-                        "source_file": doc["__source_file"],
-                    },
+                    "metadata": variant_metadata,
                 }
             )
 

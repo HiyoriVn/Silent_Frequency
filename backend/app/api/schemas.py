@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ──────────────────────────────────────
@@ -91,6 +91,8 @@ class NextPuzzleResponse(BaseModel):
     prompt_text: str
     audio_url: str | None = None
     time_limit_sec: int | None = None
+    interaction_mode: Literal["plain", "scene_hotspot"] = "plain"
+    interaction: "InteractionPayload | None" = None
     session_complete: bool
 
 
@@ -103,6 +105,10 @@ class SubmitAttemptRequest(BaseModel):
     answer: str = Field(..., min_length=1)
     response_time_ms: int = Field(..., ge=0)
     hint_count_used: int = Field(0, ge=0)
+    interaction_trace: list["InteractionTraceEvent"] | None = Field(
+        default=None,
+        max_length=20,
+    )
 
 
 class AttemptFeedback(BaseModel):
@@ -114,3 +120,78 @@ class AttemptFeedback(BaseModel):
     current_level_index: int
     session_complete: bool
     mastery: MasterySnapshot
+
+
+# ──────────────────────────────────────
+# Optional interaction schema (Phase 3)
+# ──────────────────────────────────────
+
+class InteractionRectShape(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(..., ge=0.0, le=1.0)
+    y: float = Field(..., ge=0.0, le=1.0)
+    width: float = Field(..., gt=0.0, le=1.0)
+    height: float = Field(..., gt=0.0, le=1.0)
+
+
+class InteractionHotspotTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trigger_type: Literal["click"]
+    prompt_ref: str | None = None
+
+
+class InteractionHotspot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hotspot_id: str = Field(..., min_length=1)
+    label: str | None = None
+    shape_type: Literal["rect"]
+    shape: InteractionRectShape
+    trigger: InteractionHotspotTrigger
+
+
+class InteractionPrompt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_text: str = Field(..., min_length=1)
+    answer_type: Literal["text"]
+    correct_answers: list[str] = Field(..., min_length=1)
+    max_attempt_chars: int | None = Field(default=None, ge=1)
+
+
+class InteractionScene(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scene_id: str = Field(..., min_length=1)
+    asset_key: str = Field(..., min_length=1)
+    instruction_text: str | None = None
+
+
+class InteractionUIHints(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allow_reopen_prompt: bool | None = None
+    show_hotspot_labels: bool | None = None
+
+
+class InteractionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_version: Literal[1]
+    scene: InteractionScene
+    hotspots: list[InteractionHotspot] = Field(..., min_length=1)
+    prompts: dict[str, InteractionPrompt] = Field(..., min_length=1)
+    ui_hints: InteractionUIHints | None = None
+
+
+class InteractionTraceEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: Literal["hotspot_clicked", "prompt_opened", "prompt_closed"]
+    hotspot_id: str | None = None
+    prompt_ref: str | None = None
+    elapsed_ms: int = Field(..., ge=0)
+
+

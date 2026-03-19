@@ -11,6 +11,7 @@ import type {
   MasterySnapshot,
   NextPuzzleResponse,
   AttemptFeedback,
+  InteractionTraceEvent,
 } from "@/lib/types";
 import * as api from "@/lib/api";
 
@@ -41,7 +42,11 @@ interface GameState {
   // Actions
   startSession: (name: string) => Promise<void>;
   fetchNextPuzzle: () => Promise<void>;
-  submitAnswer: (answer: string, hintCount?: number) => Promise<void>;
+  submitAnswer: (
+    answer: string,
+    hintCount?: number,
+    interactionTrace?: InteractionTraceEvent[],
+  ) => Promise<void>;
   reset: () => void;
 }
 
@@ -117,7 +122,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   // ── Submit answer ──────────────────────────────────────
-  submitAnswer: async (answer, hintCount = 0) => {
+  submitAnswer: async (answer, hintCount = 0, interactionTrace) => {
     const { sessionId, currentItem, startTime } = get();
     if (!sessionId || !currentItem) return;
 
@@ -129,6 +134,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       answer,
       response_time_ms: elapsed,
       hint_count_used: hintCount,
+      interaction_trace:
+        interactionTrace && interactionTrace.length > 0
+          ? interactionTrace
+          : undefined,
     });
 
     if (!res.ok || !res.data) {

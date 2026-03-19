@@ -85,3 +85,12 @@
 - When changing endpoints or payloads, update both sides in one task (backend schema/routes and frontend `lib/api.ts` + `lib/types.ts`).
 - Preserve current naming and flow conventions unless explicitly instructed otherwise.
 - If you detect mismatch between docs/tests and current routes, align tests/docs to implemented API instead of adding compatibility hacks.
+
+## 9. Recent Local Changes & Recommendations
+
+- **Dev server CORS/dev-origin:** Added `allowedDevOrigins` to `frontend/next.config.ts` to permit developer origin(s) (e.g. `http://26.83.101.154`) when fetching `_next` dev assets during development. Restart the Next dev server after changing this.
+- **HMR / WebSocket note:** If accessing the dev site from another machine, start Next with hostname `0.0.0.0` (or set `HOST=0.0.0.0`) so the HMR websocket can connect; ensure port 3000 reachable through firewall.
+- **Frontend tests:** Tests previously failed with `TypeError: Failed to fetch` because they attempted real network requests. Recommended fixes:
+  - Prefer mocking `frontend/src/lib/api.ts` per-test with `jest.mock("src/lib/api")` to return deterministic envelopes.
+  - Alternatively add a global `fetch` mock in a Jest setup file (e.g. `jest.setup.ts`) if many tests rely on fetch directly.
+- **Developer workflow:** When making small local changes during debugging, prefer localized edits (config or test mocks) and run the targeted test or dev server to validate — avoid broad refactors in hotfixes.

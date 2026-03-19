@@ -156,6 +156,9 @@ async def submit_attempt(
             player_answer=body.answer,
             response_time_ms=body.response_time_ms,
             hint_count_used=body.hint_count_used,
+            interaction_trace=[e.model_dump() for e in body.interaction_trace]
+            if body.interaction_trace is not None
+            else None,
         )
     except ValueError as e:
         raise _error_response("ATTEMPT_ERROR", str(e))

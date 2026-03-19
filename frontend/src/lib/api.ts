@@ -11,10 +11,10 @@ import type {
   MasteryResponse,
   NextPuzzleResponse,
   AttemptFeedback,
+  SubmitAttemptRequest,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-console.log("API URL:", BASE);
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -68,12 +68,7 @@ export async function getNextPuzzle(sessionId: string) {
 
 export async function submitAttempt(
   sessionId: string,
-  body: {
-    variant_id: string;
-    answer: string;
-    response_time_ms: number;
-    hint_count_used: number;
-  },
+  body: SubmitAttemptRequest,
 ) {
   return request<AttemptFeedback>(`/api/sessions/${sessionId}/attempts`, {
     method: "POST",

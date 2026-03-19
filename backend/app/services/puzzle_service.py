@@ -42,6 +42,26 @@ ROOM_ORDER = {
 }
 
 
+def _extract_interaction_payload(variant: PuzzleVariant) -> dict | None:
+    metadata = variant.metadata_ or {}
+    interaction = metadata.get("interaction")
+    if isinstance(interaction, dict):
+        return interaction
+    return None
+
+
+def _derive_interaction_view(
+    variant: PuzzleVariant | None,
+) -> tuple[str, dict | None]:
+    if variant is None:
+        return "plain", None
+
+    interaction = _extract_interaction_payload(variant)
+    if interaction is None:
+        return "plain", None
+    return "scene_hotspot", interaction
+
+
 def _level_info(level_index: int) -> tuple[str, int]:
     if level_index < 0 or level_index >= len(LEVEL_SCRIPT):
         raise ValueError(f"Invalid level index: {level_index}")
@@ -147,6 +167,7 @@ async def get_next_puzzle(
         raise ValueError(f"Session {session_id} not found")
 
     if session.current_level_index >= len(LEVEL_SCRIPT):
+        interaction_mode, interaction = _derive_interaction_view(None)
         return {
             "puzzle_id": "",
             "variant_id": "",
@@ -156,6 +177,8 @@ async def get_next_puzzle(
             "prompt_text": "",
             "audio_url": None,
             "time_limit_sec": None,
+            "interaction_mode": interaction_mode,
+            "interaction": interaction,
             "session_complete": True,
         }
 
@@ -163,6 +186,7 @@ async def get_next_puzzle(
     puzzle = await _resolve_level_puzzle(db, skill_code, slot_order)
     difficulty_tier = await _difficulty_for_level(db, session, skill_code, slot_order)
     variant = await _resolve_variant_for_tier(db, puzzle.id, difficulty_tier)
+    interaction_mode, interaction = _derive_interaction_view(variant)
 
     return {
         "puzzle_id": puzzle.id,
@@ -173,6 +197,8 @@ async def get_next_puzzle(
         "prompt_text": variant.prompt_text,
         "audio_url": variant.audio_url,
         "time_limit_sec": variant.time_limit_sec,
+        "interaction_mode": interaction_mode,
+        "interaction": interaction,
         "session_complete": False,
     }
 
@@ -194,6 +220,7 @@ async def submit_attempt(
     player_answer: str,
     response_time_ms: int,
     hint_count_used: int = 0,
+    interaction_trace: list[dict] | None = None,
 ) -> dict:
     """
     Score answer → BKT update → log attempt → return feedback.
@@ -273,6 +300,23 @@ async def submit_attempt(
             "response_time_ms": response_time_ms,
         },
     ))
+
+    # Optional telemetry-only trace logging. This must not affect scoring,
+    # BKT updates, progression, or completion decisions.
+    if interaction_trace is not None:
+        db.add(EventLog(
+            session_id=session_id,
+            event_type="puzzle_interaction_trace",
+            payload={
+                "version": 1,
+                "type": "interaction_trace",
+                "puzzle_id": puzzle.id,
+                "variant_id": variant.id,
+                "skill": skill.code,
+                "trace": interaction_trace,
+                "response_time_ms": response_time_ms,
+            },
+        ))
 
     # 10. Advance session progression index
     session = await db.get(GameSession, session_id)

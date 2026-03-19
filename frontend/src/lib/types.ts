@@ -69,6 +69,8 @@ export interface NextPuzzleResponse {
   prompt_text: string;
   audio_url: string | null;
   time_limit_sec: number | null;
+  interaction_mode: "plain" | "scene_hotspot";
+  interaction: InteractionPayload | null;
   session_complete: boolean;
 }
 
@@ -79,6 +81,7 @@ export interface SubmitAttemptRequest {
   answer: string;
   response_time_ms: number;
   hint_count_used: number;
+  interaction_trace?: InteractionTraceEvent[] | null;
 }
 
 export interface AttemptFeedback {
@@ -90,6 +93,59 @@ export interface AttemptFeedback {
   current_level_index: number;
   session_complete: boolean;
   mastery: MasterySnapshot;
+}
+
+// ── Interaction types (optional) ───────────────────────
+
+export interface InteractionScene {
+  scene_id: string;
+  asset_key: string;
+  instruction_text?: string;
+}
+
+export interface InteractionRectShape {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface InteractionHotspotTrigger {
+  trigger_type: "click";
+  prompt_ref?: string | null;
+}
+
+export interface InteractionHotspot {
+  hotspot_id: string;
+  label?: string;
+  shape_type: "rect";
+  shape: InteractionRectShape;
+  trigger: InteractionHotspotTrigger;
+}
+
+export interface InteractionPrompt {
+  prompt_text: string;
+  answer_type: "text";
+  correct_answers: string[];
+  max_attempt_chars?: number;
+}
+
+export interface InteractionPayload {
+  interaction_version: 1;
+  scene: InteractionScene;
+  hotspots: InteractionHotspot[];
+  prompts: Record<string, InteractionPrompt>;
+  ui_hints?: {
+    allow_reopen_prompt?: boolean;
+    show_hotspot_labels?: boolean;
+  };
+}
+
+export interface InteractionTraceEvent {
+  event_type: "hotspot_clicked" | "prompt_opened" | "prompt_closed";
+  hotspot_id?: string;
+  prompt_ref?: string;
+  elapsed_ms: number;
 }
 
 // ── UI types (frontend-only) ────────────────────────────

@@ -14,10 +14,8 @@ import React, { useState } from "react";
 import { useGameStore } from "@/stores/gameStore";
 import { useAudio } from "@/hooks/useAudio";
 import GlitchText from "@/components/GlitchText";
-import VocabularyPhase from "@/components/phases/VocabularyPhase";
-import GrammarPhase from "@/components/phases/GrammarPhase";
-import ListeningPhase from "@/components/phases/ListeningPhase";
 import CompletionPhase from "@/components/phases/CompletionPhase";
+import PuzzleScreen from "@/components/PuzzleScreen";
 
 export default function Home() {
   const {
@@ -113,10 +111,7 @@ export default function Home() {
         </p>
       )}
 
-      {/* Puzzle component chosen from backend-provided skill */}
-      {skill === "vocabulary" && <VocabularyPhase />}
-      {skill === "grammar" && <GrammarPhase />}
-      {skill === "listening" && <ListeningPhase />}
+      <PuzzleScreen key={currentItem?.variant_id ?? "no-variant"} />
 
       {!loading && !currentItem && !sessionComplete && (
         <p className="text-sm text-neutral-500">Waiting for next puzzle...</p>

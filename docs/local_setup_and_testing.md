@@ -50,30 +50,6 @@ Optional `.env` values for backend:
 - `DATABASE_URL` equivalent setting is read as `database_url` in `backend/app/config.py`
 - default DB URL: `postgresql+asyncpg://postgres:postgres@localhost:5432/silent_frequency`
 
-### Frontend API URL
-
-Frontend API base URL is read from:
-
-- `NEXT_PUBLIC_API_URL`
-
-If not set, frontend defaults to:
-
-- `http://localhost:8000`
-
-Example (PowerShell):
-
-```powershell
-$env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
-npm run dev
-```
-
-Example (bash):
-
-```bash
-export NEXT_PUBLIC_API_URL="http://localhost:8000"
-npm run dev
-```
-
 ## Quick Validation Checklist
 
 1. Backend `/health` returns `ok`.
