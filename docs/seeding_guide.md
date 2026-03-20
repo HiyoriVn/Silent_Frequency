@@ -1,6 +1,10 @@
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and added gameplay v2 seed validation and error-code guidance -->
+
 # Seeding Guide
 
 ## What the Seed System Does
+
+> **Phase-3 canonical:** The current puzzle seeding process for `backend/app/content/puzzles/` remains canonical and backward-compatible.
 
 `backend/app/seed.py` loads JSON puzzle definitions from:
 
@@ -77,3 +81,50 @@ Fix (early-stage safe option):
 2. Re-run seed script.
 
 Because this project is still early-stage, local reset is acceptable when schema/content assumptions change.
+
+## Gameplay v2 Content Locations (experimental - gameplay v2)
+
+> **experimental - gameplay v2:** Additive seeding support for room/object/item content. Existing puzzle seeding remains unchanged.
+
+### Content Placement
+
+- Rooms: `backend/app/content/rooms/*.json`
+- Items: `backend/app/content/items/*.json`
+- Puzzles remain in: `backend/app/content/puzzles/*.json`
+
+Suggested tree:
+
+```text
+backend/app/content/
+  puzzles/
+  rooms/
+    radio_room_v2.json
+  items/
+    note_fragment_1.json
+```
+
+### Validator Checklist for v2 Files
+
+- Validate `interaction_schema_version == 2` for v2 room/item files.
+- Validate object IDs are unique within each room.
+- Validate each hotspot references an existing `object_id`.
+- Validate metadata puzzle references point to existing puzzles when present (for example `metadata.puzzle_id`).
+- Validate item references used by objects (`unlock_item_id`, rewards, or effect mappings) exist in item data when required.
+
+### Seed Failure Behavior
+
+If seed detects invalid references, it should exit with clear codes/messages.
+
+Recommended mapping:
+
+- `SEED_VALIDATION_ERROR` (exit code `2`): schema mismatch or missing required fields.
+- `SEED_REFERENCE_ERROR` (exit code `3`): hotspot/object/item/puzzle reference missing.
+- `SEED_DUPLICATE_ERROR` (exit code `4`): duplicate IDs in room or item content.
+- `SEED_RUNTIME_ERROR` (exit code `5`): unexpected runtime/database failure.
+
+Example failure message:
+
+```text
+SEED_REFERENCE_ERROR: room 'radio_room_v2' hotspot 'hs_radio' references unknown object_id 'old_radio_typo'.
+```
+

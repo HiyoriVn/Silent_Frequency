@@ -1,4 +1,8 @@
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 UI/accessibility/telemetry guidance -->
+
 # Frontend Puzzle UI (Phase 3, Batch 3)
+
+> **Phase-3 canonical:** The Batch 3 component and interaction model below remains canonical for the current production puzzle flow.
 
 ## 1. Component Architecture
 
@@ -61,7 +65,7 @@ Interaction-specific state is local to PuzzleScreen:
 
 Zustand store remains a server-state mirror:
 
-1. session ids and status
+1. session IDs and status
 2. current puzzle payload
 3. mastery snapshot
 4. last feedback
@@ -99,3 +103,100 @@ To extend interaction safely:
 4. Keep interaction trace telemetry-only.
 5. Validate new interaction features at seed/schema level before UI work.
 6. Do not move progression, scoring, or mastery logic into frontend.
+
+## Inventory & Knowledge Journal (experimental - gameplay v2)
+
+> **experimental - gameplay v2:** Additive UI for room-based sessions only.
+
+### Minimal Required Behaviors
+
+- Inventory list shows canonical items in server order.
+- Selecting an item reveals metadata (name, type, short description).
+- Knowledge Journal groups clue/media entries and preserves acquisition order.
+- No canonical mutation in UI: consume/remove/add changes only after backend `effects[]`.
+
+### Keyboard Accessibility
+
+- Modal inventory/journal must use a focus trap.
+- Arrow keys move active option in the item list.
+- `Enter` selects the active item.
+- `Escape` closes modal and restores focus to opener.
+
+### ARIA Semantics
+
+- Item list container: `role="listbox"`.
+- Item row: `role="option"` with `aria-selected`.
+- Journal section headings use semantic heading levels.
+- Modal root uses `role="dialog"` and `aria-modal="true"`.
+
+## Dialogue & Typewriter Overlay (experimental - gameplay v2)
+
+### Required Semantics
+
+- New dialogue text must be announced with `aria-live="polite"`.
+- Include a visible and keyboard-accessible skip control.
+- Skip must fast-forward animation only; it must not drop queued dialogue messages.
+- Queue behavior must be deterministic: FIFO based on backend order.
+
+## UI-local vs Server-canonical State (experimental - gameplay v2)
+
+### UI-local state (allowed)
+
+- Hover/selection highlight.
+- Press/click animation.
+- Local panel open/close.
+- Typewriter speed or animation progress.
+
+### Server-canonical state (backend only)
+
+- Object lock/unlock/reveal/consumed state.
+- Inventory ownership and item consumption.
+- Puzzle solved state.
+- Session progression and mastery.
+
+Example:
+
+- Highlighting an object on click is allowed immediately.
+- Changing a lock icon to unlocked is allowed only after an `unlock` effect is returned.
+
+## Optimistic UI Policy (experimental - gameplay v2)
+
+- Do not optimistically mutate canonical gameplay state.
+- Allowed optimistic behavior is limited to micro-animations and temporary visual feedback.
+- If an action fails, UI should clear temporary animation state and render the canonical server response.
+
+## Telemetry Guidance (experimental - gameplay v2)
+
+- Use `game_action` for action telemetry.
+- Keep `puzzle_interaction_trace` for Phase-3 puzzle interaction trace telemetry.
+
+Required `game_action` fields:
+
+- `session_id`
+- `action`
+- `target_id`
+- `item_id` (nullable)
+- `client_action_id` (optional)
+- `timestamp`
+- `resulting_effects[]`
+
+Example JS payload:
+
+```js
+const telemetryEvent = {
+  event_type: "game_action",
+  payload: {
+    session_id: "4dc9c5f2-8fdb-45f2-9f31-0a6b4f87a111",
+    action: "use_item",
+    target_id: "old_radio",
+    item_id: "bent_key",
+    client_action_id: "6f627d0f-a72f-4a07-984f-dbe9f42c4b15",
+    timestamp: new Date().toISOString(),
+    resulting_effects: [
+      { type: "unlock", target_id: "old_radio" },
+      { type: "open_puzzle", puzzle_id: "listening_radio_01" }
+    ]
+  }
+};
+```
+

@@ -1,4 +1,8 @@
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and added Gameplay Engine v2 appendix with migration and dedupe guidance -->
+
 # Puzzle Engine (Phase 3, Batch 2)
+
+> **Phase-3 canonical:** The Batch 2 interaction model in this document remains the canonical reference for current production flow.
 
 ## Purpose
 
@@ -59,7 +63,7 @@ Backward compatibility:
 - Plain puzzles continue to function with no content rewrite.
 - Existing clients can ignore new fields.
 
-### POST /api/sessions/{session_id}/attempts
+### POST /api/sessions/{id}/attempts
 
 Existing request fields and response fields are unchanged.
 Added optional request field:
@@ -150,3 +154,67 @@ Future schema extensions must follow these rules:
 3. Puzzle-specific hardcoded UI branches by puzzle ID.
 4. DB schema expansion for convenience parsing only.
 5. Trace-driven scoring or adaptive policy changes.
+
+## Appendix: Gameplay Engine v2 (experimental)
+
+> **experimental - gameplay v2:** Proposal-only extension for true room/object/inventory actions. This does not replace the canonical Phase-3 contract.
+
+### Rationale
+
+Gameplay v2 introduces a declarative action/effects layer so the project can support true escape-room interactions while keeping backend authority over progression, scoring, and BKT.
+
+### Allowed Features
+
+- `POST /api/sessions/{id}/action` command API with typed payloads.
+- `GET /api/sessions/{id}/game-state` snapshot API.
+- Declarative `effects[]` in action responses.
+- Coexistence with `POST /api/sessions/{id}/attempts` for learning puzzles.
+
+### Forbidden Features
+
+- Client-side scripting interpreters or executable effect scripts.
+- Client-owned scoring, progression, or mastery updates.
+- Client commits of canonical inventory/object/puzzle solved state.
+
+### Versioning and Migration Guidance
+
+- Every gameplay-v2 request/response contract must include `interaction_schema_version: 2`.
+- Detection strategy:
+  - v1/Phase-3 sessions use `GET .../next-puzzle` and `POST .../attempts` only.
+  - v2 sessions expose `GET .../game-state` and `POST .../action` with `interaction_schema_version: 2`.
+- Migrate by session/config flag, not by forcing one client release to support both without mode awareness.
+
+### ActionRequest Example
+
+```json
+{
+  "interaction_schema_version": 2,
+  "action": "use_item",
+  "target_id": "drawer_lock",
+  "item_id": "bent_key",
+  "client_action_id": "9fffbab3-62df-4fe7-aa9b-76e7fbede2df"
+}
+```
+
+### ActionResponse Example
+
+```json
+{
+  "ok": true,
+  "data": {
+    "effects": [
+      { "type": "unlock", "target_id": "drawer_lock" },
+      { "type": "reveal", "target_id": "drawer_note" },
+      { "type": "add_item", "item_id": "note_fragment_1" },
+      { "type": "open_puzzle", "puzzle_id": "grammar_panel_02" }
+    ]
+  },
+  "error": null,
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+### Idempotency and Dedupe
+
+For unstable networks, clients should send optional `client_action_id` (UUID). Server-side dedupe should be scoped per session and action id. Recommended behavior: return the original `200` response for duplicates; if replay safety cannot be guaranteed, return `409` with a machine-readable explanation.
+

@@ -1,9 +1,13 @@
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and added exploratory gameplay-mode-v2 API semantics -->
+
 # Silent Frequency Session Flow (Phase 2)
 
 Date: 2026-03-17
 Scope: Backend session-flow redesign only
 
 ## Session Lifecycle
+
+> **Phase-3 canonical:** The fixed 9-step progression script below is the canonical current flow and remains unchanged.
 
 The backend now owns session progression through a fixed 9-step script.
 
@@ -48,7 +52,7 @@ Get next puzzle:
 
 Submit attempt:
 
-- `POST /api/sessions/{session_id}/attempts`
+- `POST /api/sessions/{id}/attempts`
 - Backend updates BKT and session progression index.
 - Response now includes: `current_level_index`, `session_complete`.
 
@@ -139,3 +143,115 @@ For student maintainers:
 3. Keep API client thin and endpoint-focused.
 4. Reuse shared puzzle UI wrappers instead of duplicating state logic.
 5. Prefer one source of truth: backend progression response fields.
+
+## Alternate Gameplay API (exploratory / gameplay-mode-v2)
+
+> **experimental - gameplay v2:** Additive API path for room/object/inventory interactions. Does not replace the canonical fixed 9-step flow.
+
+### Authority Rules
+
+- Backend is the canonical authority for room/object/inventory/puzzle states.
+- Frontend renders server responses and emits actions only.
+- Frontend must not make progression decisions or canonical state transitions.
+
+### GET /api/sessions/{id}/game-state
+
+- Purpose: fetch canonical gameplay snapshot for v2 sessions.
+- Response must include `interaction_schema_version` and `game_state_version`.
+- Server should send `ETag: W/"{session_id}:{game_state_version}"` and support `If-None-Match` for efficient polling.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "interaction_schema_version": 2,
+    "game_state_version": 14,
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": [
+        { "id": "old_radio", "state": "locked", "revealed": true },
+        { "id": "desk_drawer", "state": "unlocked", "revealed": true }
+      ]
+    },
+    "inventory": [
+      { "id": "bent_key", "display_name": "Bent Key", "category": "tool" }
+    ],
+    "dialogue": []
+  },
+  "error": null,
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+### POST /api/sessions/{id}/action
+
+- Purpose: resolve one gameplay action atomically.
+- Request supports optional dedupe key `client_action_id`.
+- Suggested action types: `inspect`, `collect`, `use_item`, `open_container`, `talk`, `trigger`.
+
+```json
+{
+  "interaction_schema_version": 2,
+  "action": "use_item",
+  "target_id": "old_radio",
+  "item_id": "bent_key",
+  "client_action_id": "6f627d0f-a72f-4a07-984f-dbe9f42c4b15"
+}
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "effects": [
+      { "type": "unlock", "target_id": "old_radio" },
+      { "type": "open_puzzle", "puzzle_id": "listening_radio_01" }
+    ],
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": [
+        { "id": "old_radio", "state": "unlocked", "revealed": true }
+      ]
+    },
+    "inventory": [
+      { "id": "bent_key", "consumed": true }
+    ],
+    "dialogue": [
+      { "id": "radio_unlocked", "text": "The dial clicks into place." }
+    ]
+  },
+  "error": null,
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+### Coexistence with POST /api/sessions/{id}/attempts
+
+- `POST /api/sessions/{id}/attempts` remains the canonical learning endpoint.
+- When action resolution returns `open_puzzle`, the client should open the puzzle UI and submit answer attempts through `POST /api/sessions/{id}/attempts`.
+- BKT and mastery updates remain tied to attempts, not generic room actions.
+
+### Concurrency Guidance
+
+- If an action conflicts with current canonical state, return `409 Conflict`.
+- Include machine-readable conflict details and the latest canonical `room_state` in the error envelope.
+
+```json
+{
+  "ok": false,
+  "data": {
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": [
+        { "id": "old_radio", "state": "unlocked", "revealed": true }
+      ]
+    }
+  },
+  "error": {
+    "code": "ACTION_CONFLICT",
+    "message": "Object state changed before this action was applied."
+  },
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+

@@ -1,3 +1,5 @@
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 extension and error-handling rules -->
+
 # AGENTS.md
 
 ## 1. Project Overview
@@ -60,6 +62,8 @@
 
 ## 6. Rules & Constraints
 
+> **Phase-3 canonical:** The rules in this section are the default contract for current production flow.
+
 - MUST keep session progression backend-owned (`current_level_index` flow from backend).
 - MUST keep adaptive/static condition behavior in backend policy code.
 - MUST keep BKT update logic in `backend/app/engine` and call it from services (do not reimplement in UI).
@@ -68,6 +72,93 @@
 - MUST NOT move progression decisions into frontend phase components/store.
 - MUST NOT bypass service layer by putting business logic directly in routes.
 - MUST NOT introduce new architectural patterns when existing service/store patterns already fit.
+
+## 6.1 Game-mode v2 - Extension Rules (experimental - gameplay v2)
+
+> **experimental - gameplay v2:** Additive rules for room/object/inventory actions. Do not replace Phase-3 canonical flow by default.
+
+### Summary
+
+- Gameplay v2 enables true escape-room interactions while keeping learning validity and backend authority.
+- Every gameplay contract change MUST be versioned using `interaction_schema_version`.
+
+### Typed Action Payload Requirement
+
+- Requests to `POST /api/sessions/{id}/action` MUST be strongly typed and schema-validated.
+- Minimum required fields: `interaction_schema_version`, `action`, `target_id`.
+- Optional fields: `item_id`, `client_action_id`.
+
+```json
+{
+  "interaction_schema_version": 2,
+  "action": "use_item",
+  "target_id": "cabinet_lock",
+  "item_id": "rusty_key",
+  "client_action_id": "95d5e047-f9f2-4d8f-a05b-fd2a58f8f2bf"
+}
+```
+
+### Declarative Effects Requirement
+
+- Backend MUST return declarative `effects[]` only.
+- Backend MUST NOT send executable scripts for client-side evaluation.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "effects": [
+      { "type": "unlock", "target_id": "cabinet_lock" },
+      { "type": "reveal", "target_id": "cabinet_inner" },
+      { "type": "add_item", "item_id": "note_fragment_1" },
+      { "type": "open_puzzle", "puzzle_id": "grammar_panel_02" }
+    ]
+  },
+  "error": null,
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+### Telemetry Requirement
+
+- Every resolved action MUST emit a `game_action` telemetry event.
+- Required fields:
+  - `session_id`
+  - `action`
+  - `target_id`
+  - `item_id` (nullable)
+  - `timestamp`
+  - `resulting_effects[]`
+- Optional field:
+  - `client_action_id`
+
+### Testing Requirement
+
+- MUST add backend unit tests for action validation, resolver behavior, and effects mapping.
+- MUST run an integration spike (session create -> action -> canonical state update -> `game_action` telemetry) before enabling v2 in shared environments.
+- SHOULD preserve coexistence with `POST /api/sessions/{id}/attempts` for learning puzzle scoring.
+
+### Error Handling Suggestion
+
+- Use the standard envelope for failures:
+
+```json
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "ACTION_CONFLICT",
+    "message": "The target is already unlocked."
+  },
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+- Recommended HTTP mapping:
+  - `400` invalid payload / unsupported action / schema mismatch.
+  - `404` session or target object not found.
+  - `409` action conflict or stale state.
+  - `500` unexpected server error.
 
 ## 7. Testing Guidelines
 
@@ -88,9 +179,11 @@
 
 ## 9. Recent Local Changes & Recommendations
 
-- **Dev server CORS/dev-origin:** Added `allowedDevOrigins` to `frontend/next.config.ts` to permit developer origin(s) (e.g. `http://26.83.101.154`) when fetching `_next` dev assets during development. Restart the Next dev server after changing this.
-- **HMR / WebSocket note:** If accessing the dev site from another machine, start Next with hostname `0.0.0.0` (or set `HOST=0.0.0.0`) so the HMR websocket can connect; ensure port 3000 reachable through firewall.
+- **Dev server CORS/dev-origin:** Added `allowedDevOrigins` to `frontend/next.config.ts` to permit developer origin(s) (for example `http://26.83.101.154`) when fetching `_next` dev assets during development. Restart the Next dev server after changing this.
+- **HMR / WebSocket note:** If accessing the dev site from another machine, start Next with hostname `0.0.0.0` (or set `HOST=0.0.0.0`) so the HMR websocket can connect; ensure port 3000 is reachable through firewall.
 - **Frontend tests:** Tests previously failed with `TypeError: Failed to fetch` because they attempted real network requests. Recommended fixes:
   - Prefer mocking `frontend/src/lib/api.ts` per-test with `jest.mock("src/lib/api")` to return deterministic envelopes.
-  - Alternatively add a global `fetch` mock in a Jest setup file (e.g. `jest.setup.ts`) if many tests rely on fetch directly.
-- **Developer workflow:** When making small local changes during debugging, prefer localized edits (config or test mocks) and run the targeted test or dev server to validate — avoid broad refactors in hotfixes.
+  - Alternatively add a global `fetch` mock in a Jest setup file (for example `jest.setup.ts`) if many tests rely on fetch directly.
+- **Developer workflow:** For small debugging changes, prefer localized edits (config or test mocks) and run targeted validation. Avoid broad refactors in hotfixes.
+
+
