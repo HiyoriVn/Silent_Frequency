@@ -38,6 +38,7 @@ export interface SessionCreated {
   player_id: string;
   session_token: string;
   condition: "adaptive" | "static";
+  mode: "phase3" | "gameplay_v2";
   current_level_index: number;
   mastery: MasterySnapshot;
   current_room: string;
@@ -70,7 +71,7 @@ export interface NextPuzzleResponse {
   audio_url: string | null;
   time_limit_sec: number | null;
   interaction_mode: "plain" | "scene_hotspot";
-  interaction: InteractionPayload | null;
+  interaction: Phase3InteractionPayload | null;
   session_complete: boolean;
 }
 
@@ -97,44 +98,44 @@ export interface AttemptFeedback {
 
 // ── Interaction types (optional) ───────────────────────
 
-export interface InteractionScene {
+export interface Phase3InteractionScene {
   scene_id: string;
   asset_key: string;
   instruction_text?: string;
 }
 
-export interface InteractionRectShape {
+export interface Phase3InteractionRectShape {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface InteractionHotspotTrigger {
+export interface Phase3InteractionHotspotTrigger {
   trigger_type: "click";
   prompt_ref?: string | null;
 }
 
-export interface InteractionHotspot {
+export interface Phase3InteractionHotspot {
   hotspot_id: string;
   label?: string;
   shape_type: "rect";
-  shape: InteractionRectShape;
-  trigger: InteractionHotspotTrigger;
+  shape: Phase3InteractionRectShape;
+  trigger: Phase3InteractionHotspotTrigger;
 }
 
-export interface InteractionPrompt {
+export interface Phase3InteractionPrompt {
   prompt_text: string;
   answer_type: "text";
   correct_answers: string[];
   max_attempt_chars?: number;
 }
 
-export interface InteractionPayload {
+export interface Phase3InteractionPayload {
   interaction_version: 1;
-  scene: InteractionScene;
-  hotspots: InteractionHotspot[];
-  prompts: Record<string, InteractionPrompt>;
+  scene: Phase3InteractionScene;
+  hotspots: Phase3InteractionHotspot[];
+  prompts: Record<string, Phase3InteractionPrompt>;
   ui_hints?: {
     allow_reopen_prompt?: boolean;
     show_hotspot_labels?: boolean;
@@ -142,10 +143,87 @@ export interface InteractionPayload {
 }
 
 export interface InteractionTraceEvent {
-  event_type: "hotspot_clicked" | "prompt_opened" | "prompt_closed";
+  event_type:
+    | "hotspot_clicked"
+    | "prompt_opened"
+    | "prompt_closed"
+    | "hint_opened";
   hotspot_id?: string;
   prompt_ref?: string;
   elapsed_ms: number;
+}
+
+// ── Gameplay v2 interaction schema ─────────────────────
+
+export type InteractionAction =
+  | "use_item"
+  | "inspect"
+  | "take_item"
+  | "open_object";
+
+export interface Item {
+  id: string;
+  display_name: string;
+  category: string;
+  consumed: boolean;
+  properties: Record<string, unknown>;
+}
+
+export interface GameStateObject {
+  id: string;
+  type: string;
+  state: string;
+  properties: Record<string, unknown>;
+}
+
+export interface GameStateSnapshot {
+  interaction_schema_version: 2;
+  session_id: string;
+  game_state_version: number;
+  updated_at: string;
+  room_id: string;
+  room_state: GameStateObject[];
+  inventory: Item[];
+  active_puzzles: string[];
+  hint_policy?: {
+    idle_seconds?: number;
+    failed_attempts_threshold?: number;
+  } | null;
+}
+
+export interface InteractionEffect {
+  type: "add_item" | "unlock" | "show_dialogue" | "open_puzzle";
+  target_id?: string | null;
+  item_id?: string | null;
+  puzzle_id?: string | null;
+  dialogue_id?: string | null;
+  dialogue_text?: string | null;
+}
+
+export interface InteractionHotspot {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  target_id: string;
+  default_action?: InteractionAction;
+}
+
+export interface InteractionPayload {
+  interaction_schema_version: 2;
+  action: InteractionAction;
+  target_id: string;
+  item_id?: string;
+  client_action_id?: string;
+  client_ts?: string | number;
+  game_state_version?: number;
+}
+
+export interface ActionResponseData {
+  effects: InteractionEffect[];
+  game_state: GameStateSnapshot;
 }
 
 // ── UI types (frontend-only) ────────────────────────────
