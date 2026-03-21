@@ -1,15 +1,15 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-
+import { describe, it, expect, vi } from "vitest";
 import PuzzleScreen from "@/components/PuzzleScreen";
 
-const getGameState = jest.fn();
-const postAction = jest.fn();
-const getNextPuzzle = jest.fn();
-const submitAttempt = jest.fn();
+const getGameState = vi.fn();
+const postAction = vi.fn();
+const getNextPuzzle = vi.fn();
+const submitAttempt = vi.fn();
 
-jest.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   getGameState: (...args: unknown[]) => getGameState(...args),
   postAction: (...args: unknown[]) => postAction(...args),
   getNextPuzzle: (...args: unknown[]) => getNextPuzzle(...args),
@@ -55,7 +55,7 @@ describe("PuzzleScreen", () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     getGameState.mockResolvedValue({
       ok: true,
       data: { game_state: snapshot },
