@@ -173,14 +173,9 @@ Audio delivery is intentionally deferred. Add real TTS/audio URLs later without 
 ```json
 {
   "interaction_schema_version": 2,
-  "id": "note_fragment_1",
-  "display_name": "Torn Note Fragment",
-  "category": "clue",
-  "payload": {
-    "text": "FM 87.5 ... midnight",
-    "audio_url": null,
-    "fragment_id": "note_f1"
-  },
+  "item_id": "screwdriver_01",
+  "display_name": "Screwdriver",
+  "category": "tool",
   "reusable": true
 }
 ```
@@ -226,7 +221,9 @@ class ItemModel(BaseModel):
     reusable: bool = False
 ```
 
-> **Item semantics — clarification:** `reusable: bool` belongs to the **item definition / content model** (this file, `ItemModel`). It describes whether the item survives use (for example a clue card is reusable; a one-time key is not). `consumed: bool` belongs to the **runtime inventory snapshot** in API responses (see `gameplay_architecture.md`, `ItemModel.consumed`). These are not contradictory: content authoring sets reusable intent; the runtime state tracks consumption. Do not add `consumed` to content definition files.
+Note: Authoring uses `reusable: bool`. Runtime inventory items include `consumed: bool` as required.
+
+> **Item semantics — clarification:** `reusable: bool` belongs to the **item definition / content model** (this file, `ItemModel`). It describes whether the item survives use (for example a clue card is reusable; a one-time key is not). `consumed: bool` belongs to the **runtime inventory snapshot** in API responses (see `gameplay_architecture.md`, runtime examples). These are not contradictory: content authoring sets reusable intent; the runtime state tracks consumption. Do not add `consumed` to content definition files.
 
 > **Object state model — clarification:** Content authoring uses explicit **boolean flags** in `initial_state` (for example `locked: true`, `revealed: true`, `collected: false`). This is the canonical authoring format. Runtime snapshots currently use an enum `state` field alongside booleans. The intended direction is to prefer explicit flags where possible; avoid introducing new mixed enum + boolean combinations. The existing runtime model may be harmonised in a future schema revision.
 
@@ -305,7 +302,24 @@ class ItemModel(BaseModel):
 
 ### Effects Array (schema fragment only)
 
-> The following is a **schema fragment** illustrating the `effects[]` structure. Full API responses always use the standard envelope: `ok`, `data`, `error`, `meta`.
+> The following is a **schema fragment** illustrating the `effects[]` structure. All API responses use the standard envelope: `ok`, `data`, `error`, `meta`.
+
+Effects note:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "effects": [{ "type": "unlock", "target_id": "desk_drawer" }],
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": []
+    },
+    "inventory": []
+  },
+  "meta": { "interaction_schema_version": 2 }
+}
+```
 
 ```json
 {
@@ -322,9 +336,11 @@ class ItemModel(BaseModel):
 ### Asset Conventions
 
 - Prototype asset locations:
-  - `frontend/public/scenes/` for room backgrounds.
-  - `frontend/public/objects/` for object overlays/icons.
+  - `frontend/public/scenes/{asset_key}.png` for scene images.
+  - `frontend/public/objects/{asset_key}.png` for object sprites.
 - Allowed formats: `.png`, `.jpg`, `.svg`.
+- Provide 1x and 2x (retina) variants.
+- Renderer should use `<img onError>` to fallback to placeholder, but hotspot coordinates remain functional.
 - Recommended resolutions:
   - Scene backgrounds: base 1920x1080.
   - Object overlays/icons: 256x256 or 512x512 depending on complexity.

@@ -105,14 +105,13 @@ backend/app/content/
 
 ### Validator Checklist for v2 Files
 
-- Validate `interaction_schema_version == 2` for v2 room/item files.
-- Validate object IDs are unique within each room.
-- Validate item IDs are unique across item files.
-- Validate each hotspot references an existing `object_id`.
-- Validate metadata puzzle references point to existing puzzles when present (for example `metadata.puzzle_id`).
-- Validate item references used by objects (`unlock_item_id`, rewards, or effect mappings) exist in item data when required.
-- Validate shape bounds for clickable regions (`x`, `y` in `[0,1]`; `w`, `h` in `(0,1]`).
-- Validate allowed enums (`interaction_kind`, item `category`) before any DB writes.
+- File-level: `interaction_schema_version` must be `2`.
+- Object IDs must be unique within a room.
+- Hotspots must reference valid object IDs.
+- `metadata.puzzle_id` and `metadata.item_id` references must exist in puzzles/items.
+- Shape coordinates (`x`, `y`, `w`, `h`) must all be in `[0.0,1.0]`.
+- No scripting sections are allowed in JSON; declarative fields only.
+- On validation failure, seed must exit non-zero with descriptive code/message.
 
 Recommended validator execution order:
 
@@ -127,10 +126,10 @@ If seed detects invalid references, it should exit with clear codes/messages.
 
 Recommended mapping:
 
-- `SEED_VALIDATION_ERROR` (exit code `2`): schema mismatch or missing required fields.
-- `SEED_REFERENCE_ERROR` (exit code `3`): hotspot/object/item/puzzle reference missing.
-- `SEED_DUPLICATE_ERROR` (exit code `4`): duplicate IDs in room or item content.
-- `SEED_RUNTIME_ERROR` (exit code `5`): unexpected runtime/database failure.
+- `2` = schema validation error.
+- `3` = missing reference (puzzle/item/object).
+- `4` = geometry invalid.
+- `5` = duplicate ID.
 
 Example failure message:
 

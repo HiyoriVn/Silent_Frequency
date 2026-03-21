@@ -151,6 +151,161 @@ class ActionResponse(BaseModel):
 
 > **Object state model — clarification:** Runtime object state MUST NOT mix enum state plus duplicated boolean flags as a long-term model. For Phase 4 implementation, developers SHOULD treat explicit boolean flags (`locked`, `revealed`, `collected`) as canonical where possible. The enum-based runtime state is transitional and MUST NOT be expanded further.
 
+## Phase 4 Clarifications (requested)
+
+### Item semantics (content vs runtime)
+
+_(Short canonicalization)_
+
+- **Content model (authoring):** item definitions use `reusable: bool`. This field is part of the item **definition** and indicates whether the item can be used multiple times by design.
+- **Runtime/inventory model:** runtime entries may include a `consumed: bool` flag to indicate that an item instance has been consumed during play. `consumed` is a runtime state and does not contradict `reusable` in the item definition.
+
+Example:
+
+```json
+{
+  "item_id": "screwdriver_01",
+  "display_name": "Screwdriver",
+  "category": "tool",
+  "reusable": true
+}
+```
+
+```json
+{
+  "id": "screwdriver_01",
+  "display_name": "Screwdriver",
+  "category": "tool",
+  "consumed": false
+}
+```
+
+### Object state canonicalization
+
+For Phase 4 we prefer **explicit boolean flags** in both authoring `initial_state` and runtime `state` (examples: `locked`, `revealed`, `collected`). Avoid mixing enums and duplicated booleans.
+
+Example `initial_state`:
+
+```json
+{
+  "locked": true,
+  "revealed": false,
+  "collected": false
+}
+```
+
+Runtime `object.state` should use the same flags.
+
+### Pydantic snippets (v2-style minimal)
+
+```python
+from datetime import datetime
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class RectShape(BaseModel):
+    x: float = Field(..., ge=0.0, le=1.0)
+    y: float = Field(..., ge=0.0, le=1.0)
+    w: float = Field(..., gt=0.0, le=1.0)
+    h: float = Field(..., gt=0.0, le=1.0)
+
+
+class ObjectModel(BaseModel):
+    id: str
+    label: str
+    type: Literal["prop", "container", "locked_container", "puzzle_trigger", "audio", "clue"]
+    shape: RectShape
+    initial_state: Dict[str, bool] = Field(default_factory=dict)
+    metadata: Optional[Dict[str, str]] = None
+
+
+class ItemModel(BaseModel):
+    item_id: str
+    display_name: str
+    category: Literal["tool", "clue", "media"]
+    reusable: bool = True
+
+
+class GameStateSnapshot(BaseModel):
+    interaction_schema_version: int = 2
+    game_state_version: int
+    updated_at: datetime
+    room_id: str
+    objects: List[ObjectModel]
+    inventory: List[Dict]
+
+
+class ActionRequest(BaseModel):
+    interaction_schema_version: int = 2
+    action: str
+    target_id: str
+    item_id: Optional[str] = None
+    client_action_id: Optional[str] = None
+    client_game_state_version: Optional[int] = None
+
+
+class Effect(BaseModel):
+    type: str
+    target_id: Optional[str] = None
+    payload: Optional[dict] = None
+
+
+class ActionResponse(BaseModel):
+    effects: List[Effect]
+    room_state: GameStateSnapshot
+    inventory: List[Dict]
+    game_state_version: int
+```
+
+### ETag / game_state_version / 409 example
+
+- `game_state_version` (integer) MUST be present in every canonical snapshot.
+- `GET /api/sessions/{id}/game-state` may include an `ETag` header computed from the snapshot.
+- If a client sends a stale `client_game_state_version` the server should return `409 CONFLICT` with the current snapshot.
+
+Example 409:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "CONFLICT_STALE_STATE",
+    "message": "Client state is stale"
+  },
+  "data": {
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": []
+    },
+    "game_state_version": 42
+  }
+}
+```
+
+Client guidance: on `409` the client should refetch `GET /game-state`, reconcile UI, and optionally retry the action.
+
+### client_action_id guidance (soft)
+
+- `client_action_id` is optional. It can be used by clients for retry safety.
+- For Phase 4 implementation, persistence of dedupe records is **optional**; server may log the field and may implement lightweight dedupe later. Do not require a heavy distributed dedupe system for the pilot.
+
+### Atomic effects note
+
+- Effects must be computed and applied atomically inside a DB transaction. Long-running work should be delegated to background jobs; the action handler should return deterministic effects only after commit.
+
+### hint_policy snippet
+
+```yaml
+hint_policy:
+  auto_hint_enabled: true
+  idle_seconds: 60
+  failed_attempts_threshold: 3
+```
+
+Server enforces policy and emits `hint_opened` telemetry when a hint is given.
+
 ## JSON Schemas (minimal references)
 
 ### ActionRequest JSON Schema (minimal)

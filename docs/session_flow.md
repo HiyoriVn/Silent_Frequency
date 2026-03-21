@@ -165,34 +165,30 @@ For student maintainers:
 - Inventory item shape MUST be identical across `GET /game-state` and `POST /action` responses (`id`, `display_name`, `category`, `consumed` when present).
 - Server should send `ETag: W/"{session_id}:{game_state_version}"` and support `If-None-Match` for efficient polling.
 
+Response example:
+
 ```json
 {
-  "ok": true,
-  "data": {
-    "interaction_schema_version": 2,
-    "game_state_version": 14,
-    "updated_at": "2026-03-21T10:31:00Z",
-    "room_state": {
-      "room_id": "radio_room_v2",
-      "objects": [
-        { "id": "old_radio", "state": "locked", "revealed": true },
-        { "id": "desk_drawer", "state": "unlocked", "revealed": true }
-      ]
-    },
-    "inventory": [
-      {
-        "id": "bent_key",
-        "display_name": "Bent Key",
-        "category": "tool",
-        "consumed": false
-      }
-    ],
-    "dialogue_queue": []
+  "interaction_schema_version": 2,
+  "game_state_version": 42,
+  "updated_at": "2026-03-21T12:00:00Z",
+  "room_state": {
+    "room_id": "radio_room_v2",
+    "objects": []
   },
-  "error": null,
-  "meta": { "interaction_schema_version": 2 }
+  "inventory": [
+    {
+      "id": "k1",
+      "display_name": "Silver Key",
+      "category": "tool",
+      "consumed": false
+    }
+  ],
+  "dialogue_queue": []
 }
 ```
+
+(`ETag` header recommended)
 
 ### POST /api/sessions/{session_id}/action
 
@@ -200,70 +196,65 @@ For student maintainers:
 - Request supports optional dedupe key `client_action_id` and optional optimistic concurrency key `client_game_state_version`.
 - Suggested action types: `inspect`, `collect`, `use_item`, `open_container`, `talk`, `trigger`.
 
+Request example:
+
 ```json
 {
   "interaction_schema_version": 2,
   "action": "use_item",
-  "target_id": "old_radio",
-  "item_id": "bent_key",
-  "client_action_id": "6f627d0f-a72f-4a07-984f-dbe9f42c4b15",
-  "client_game_state_version": 14
+  "target_id": "safe_01",
+  "item_id": "screwdriver_01",
+  "client_action_id": "uuid-123e4567-e89b-12d3-a456-426614174000",
+  "client_game_state_version": 41
 }
 ```
+
+Response example (success):
 
 ```json
 {
-  "ok": true,
-  "data": {
-    "effects": [
-      { "type": "unlock", "target_id": "old_radio" },
-      { "type": "open_puzzle", "puzzle_id": "listening_radio_01" }
-    ],
-    "room_state": {
-      "room_id": "radio_room_v2",
-      "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
-    },
-    "inventory": [
-      {
-        "id": "bent_key",
-        "display_name": "Bent Key",
-        "category": "tool",
-        "consumed": true
-      }
-    ],
-    "dialogue_queue": [
-      { "id": "radio_unlocked", "text": "The dial clicks into place." }
-    ],
-    "game_state_version": 15
+  "effects": [
+    { "type": "unlock", "target_id": "safe_01" },
+    { "type": "open_puzzle", "payload": { "puzzle_id": "p_safe_01" } }
+  ],
+  "room_state": {
+    "room_id": "radio_room_v2",
+    "objects": []
   },
-  "error": null,
-  "meta": { "interaction_schema_version": 2 }
+  "inventory": [
+    {
+      "id": "k1",
+      "display_name": "Silver Key",
+      "category": "tool",
+      "consumed": false
+    }
+  ],
+  "game_state_version": 42
 }
 ```
 
-Stale state response example (`409 CONFLICT_STALE_STATE`):
+Response example (stale):
+
+HTTP 409
 
 ```json
 {
   "ok": false,
-  "data": {
-    "interaction_schema_version": 2,
-    "game_state_version": 15,
-    "updated_at": "2026-03-21T10:34:00Z",
-    "room_state": {
-      "room_id": "radio_room_v2",
-      "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
-    },
-    "inventory": [],
-    "dialogue_queue": []
-  },
   "error": {
     "code": "CONFLICT_STALE_STATE",
-    "message": "client_game_state_version is stale."
+    "message": "Client game_state_version is stale"
   },
-  "meta": { "interaction_schema_version": 2 }
+  "data": {
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": []
+    },
+    "game_state_version": 42
+  }
 }
 ```
+
+Client behavior on `409`: refetch `GET /game-state`, reconcile UI with returned snapshot, show a non-blocking banner `State refreshed`, and allow the user to retry.
 
 ### Dedupe and Idempotency Behavior
 
