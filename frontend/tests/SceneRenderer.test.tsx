@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
-
+import { describe, it, expect, vi } from "vitest";
 import SceneRenderer from "@/components/SceneRenderer";
 
 type SceneHotspot = {
@@ -30,7 +30,7 @@ describe("SceneRenderer", () => {
   ];
 
   it("calls callback on click", () => {
-    const onHotspotClicked = jest.fn();
+    const onHotspotClicked = vi.fn();
     render(
       <SceneRenderer
         assetKey="lab1-desk"
@@ -46,7 +46,7 @@ describe("SceneRenderer", () => {
   });
 
   it("supports keyboard activation", () => {
-    const onHotspotClicked = jest.fn();
+    const onHotspotClicked = vi.fn();
     render(
       <SceneRenderer
         assetKey="lab1-desk"
