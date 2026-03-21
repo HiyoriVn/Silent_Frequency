@@ -1,0 +1,78 @@
+{
+  "interaction_schema_version": 2,
+  "room_id": "lab1",
+  "background_asset_key": "lab1-desk",
+  "objects": [
+    {
+      "id": "old_radio",
+      "type": "interactable",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true
+      }
+    },
+    {
+      "id": "drawer",
+      "type": "container",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true
+      }
+    },
+    {
+      "id": "note",
+      "type": "clue",
+      "state": "revealed",
+      "properties": {
+        "revealed": true
+      }
+    }
+  ],
+  "items": {
+    "bent_key": {
+      "id": "bent_key",
+      "display_name": "Bent Key",
+      "category": "tool",
+      "consumed": false,
+      "properties": {}
+    }
+  },
+  "effects": {
+    "use_item:old_radio:bent_key": [
+      {
+        "type": "unlock",
+        "target_id": "old_radio"
+      },
+      {
+        "type": "open_puzzle",
+        "puzzle_id": "start_listen_code"
+      }
+    ],
+    "inspect:note": [
+      {
+        "type": "show_dialogue",
+        "target_id": "note",
+        "dialogue_id": "note_read_01"
+      }
+    ],
+    "open_object:drawer": [
+      {
+        "type": "unlock",
+        "target_id": "drawer"
+      }
+    ],
+    "take_item:bent_key": [
+      {
+        "type": "add_item",
+        "item_id": "bent_key",
+        "target_id": "bent_key"
+      }
+    ]
+  },
+  "hint_policy": {
+    "idle_seconds": 45,
+    "failed_attempts_threshold": 2
+  }
+}
