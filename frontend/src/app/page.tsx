@@ -1,121 +1,72 @@
-/**
- * Silent Frequency — Main Game Page
- *
- * Backend-owned session flow page.
- * UI states:
- *   1) no session => lobby
- *   2) active session => current puzzle
- *   3) completed session => completion summary
- */
-
 "use client";
 
-import React, { useState } from "react";
-import { useGameStore } from "@/stores/gameStore";
-import { useAudio } from "@/hooks/useAudio";
-import GlitchText from "@/components/GlitchText";
-import CompletionPhase from "@/components/phases/CompletionPhase";
+import React from "react";
 import PuzzleScreen from "@/components/PuzzleScreen";
+import { createSession } from "@/lib/api";
 
 export default function Home() {
-  const {
-    sessionId,
-    sessionComplete,
-    currentItem,
-    loading,
-    error,
-    startSession,
-  } = useGameStore();
-  const { startAmbient } = useAudio();
-  const [nameInput, setNameInput] = useState("");
+  const [displayName, setDisplayName] = React.useState("");
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  // ── Lobby / name entry ────────────────────────────────
+  const startGameplayV2 = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!displayName.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    const response = await createSession(
+      displayName.trim(),
+      "adaptive",
+      "gameplay_v2",
+    );
+    if (!response.ok || !response.data) {
+      setError(
+        response.error?.message ?? "Failed to create gameplay_v2 session",
+      );
+      setLoading(false);
+      return;
+    }
+
+    setSessionId(response.data.session_id);
+    setLoading(false);
+  };
+
   if (!sessionId) {
-    const handleStart = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!nameInput.trim()) return;
-      startAmbient();
-      await startSession(nameInput.trim());
-    };
-
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
-        <div className="text-center">
-          <GlitchText
-            mastery={0.15}
-            as="h1"
-            className="text-5xl font-bold tracking-wider text-neutral-100"
-          >
-            SILENT FREQUENCY
-          </GlitchText>
-          <p className="mt-3 text-sm tracking-widest text-neutral-500">
-            ADAPTIVE ESCAPE ROOM
-          </p>
-        </div>
+      <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col items-center justify-center gap-6 px-4">
+        <h1 className="text-4xl font-semibold tracking-wide text-neutral-100">
+          Silent Frequency
+        </h1>
+        <p className="text-sm text-neutral-500">
+          Batch 4.1 gameplay_v2 vertical slice
+        </p>
 
-        <form
-          onSubmit={handleStart}
-          className="flex w-full max-w-xs flex-col gap-3"
-        >
+        <form onSubmit={startGameplayV2} className="w-full space-y-3">
           <input
-            type="text"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            placeholder="Enter callsign…"
-            maxLength={64}
-            autoFocus
-            className="rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-3 text-center font-mono text-neutral-100 placeholder:text-neutral-600 focus:border-cyan-500 focus:outline-none"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            placeholder="Enter display name"
+            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-4 py-3 text-neutral-100"
           />
           <button
             type="submit"
-            disabled={loading || !nameInput.trim()}
-            className="rounded-lg bg-cyan-600 py-3 font-medium tracking-wider text-white transition hover:bg-cyan-500 disabled:opacity-40"
+            disabled={loading || !displayName.trim()}
+            className="w-full rounded-md bg-cyan-600 px-4 py-3 font-medium text-white disabled:opacity-50"
           >
-            {loading ? "CONNECTING…" : "BEGIN TRANSMISSION"}
+            {loading ? "Starting..." : "Start gameplay_v2"}
           </button>
-          {error && <p className="text-center text-xs text-red-400">{error}</p>}
         </form>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
       </main>
     );
   }
-
-  // ── Completion state ──────────────────────────────────
-  if (sessionComplete) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-12">
-        <CompletionPhase />
-      </main>
-    );
-  }
-
-  // ── Active puzzle state ───────────────────────────────
-  const skill = currentItem?.skill;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-12">
-      {/* Backend level indicator */}
-      <div className="flex items-center gap-2 text-xs text-neutral-500">
-        <span className="uppercase tracking-wider">Live Session</span>
-        {skill && <span className="text-neutral-700">—</span>}
-        {skill && (
-          <span className="font-semibold uppercase tracking-wider text-cyan-400">
-            {skill}
-          </span>
-        )}
-      </div>
-
-      {/* Loading state */}
-      {loading && !currentItem && (
-        <p className="animate-pulse text-sm text-neutral-500">
-          Decoding signal…
-        </p>
-      )}
-
-      <PuzzleScreen key={currentItem?.variant_id ?? "no-variant"} />
-
-      {!loading && !currentItem && !sessionComplete && (
-        <p className="text-sm text-neutral-500">Waiting for next puzzle...</p>
-      )}
+    <main className="min-h-screen px-4 py-8">
+      <PuzzleScreen sessionId={sessionId} />
     </main>
   );
 }

@@ -9,7 +9,16 @@
       "state": "locked",
       "properties": {
         "locked": true,
-        "revealed": true
+        "revealed": true,
+        "asset_key": "lab1-desk",
+        "hotspot": {
+          "x": 0.12,
+          "y": 0.28,
+          "w": 0.22,
+          "h": 0.28,
+          "label": "Old Radio",
+          "default_action": "inspect"
+        }
       }
     },
     {
@@ -18,7 +27,15 @@
       "state": "locked",
       "properties": {
         "locked": true,
-        "revealed": true
+        "revealed": true,
+        "hotspot": {
+          "x": 0.62,
+          "y": 0.48,
+          "w": 0.2,
+          "h": 0.24,
+          "label": "Drawer",
+          "default_action": "take_item"
+        }
       }
     },
     {
@@ -26,7 +43,15 @@
       "type": "clue",
       "state": "revealed",
       "properties": {
-        "revealed": true
+        "revealed": true,
+        "hotspot": {
+          "x": 0.38,
+          "y": 0.22,
+          "w": 0.18,
+          "h": 0.18,
+          "label": "Note",
+          "default_action": "inspect"
+        }
       }
     }
   ],
@@ -54,16 +79,11 @@
       {
         "type": "show_dialogue",
         "target_id": "note",
-        "dialogue_id": "note_read_01"
+        "dialogue_id": "note_read_01",
+        "dialogue_text": "The note says: tune the old radio and listen for the code."
       }
     ],
-    "open_object:drawer": [
-      {
-        "type": "unlock",
-        "target_id": "drawer"
-      }
-    ],
-    "take_item:bent_key": [
+    "take_item:drawer": [
       {
         "type": "add_item",
         "item_id": "bent_key",

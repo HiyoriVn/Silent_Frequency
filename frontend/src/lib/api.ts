@@ -12,7 +12,19 @@ import type {
   NextPuzzleResponse,
   AttemptFeedback,
   SubmitAttemptRequest,
+  ActionResponseData,
+  GameStateSnapshot,
 } from "./types";
+
+type ActionRequestPayload = {
+  interaction_schema_version: 2;
+  action: "use_item" | "inspect" | "take_item" | "open_object";
+  target_id: string;
+  item_id?: string;
+  client_action_id?: string;
+  client_ts?: string | number;
+  game_state_version?: number;
+};
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -51,10 +63,11 @@ async function request<T>(
 export async function createSession(
   displayName: string,
   condition: "adaptive" | "static" = "adaptive",
+  mode: "phase3" | "gameplay_v2" = "phase3",
 ) {
   return request<SessionCreated>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ display_name: displayName, condition }),
+    body: JSON.stringify({ display_name: displayName, condition, mode }),
   });
 }
 
@@ -73,5 +86,33 @@ export async function submitAttempt(
   return request<AttemptFeedback>(`/api/sessions/${sessionId}/attempts`, {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+function buildClientActionId(): string | undefined {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return undefined;
+}
+
+export async function getGameState(sessionId: string) {
+  return request<{ game_state: GameStateSnapshot }>(
+    `/api/sessions/${sessionId}/game-state`,
+  );
+}
+
+export async function postAction(
+  sessionId: string,
+  body: ActionRequestPayload,
+) {
+  const payload: ActionRequestPayload = {
+    ...body,
+    client_action_id: body.client_action_id ?? buildClientActionId(),
+  };
+
+  return request<ActionResponseData>(`/api/sessions/${sessionId}/action`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }

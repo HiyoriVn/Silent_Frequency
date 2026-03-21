@@ -46,19 +46,52 @@ def _default_room_state() -> list[dict[str, Any]]:
             "id": "old_radio",
             "type": "interactable",
             "state": "locked",
-            "properties": {"locked": True, "revealed": True},
+            "properties": {
+                "locked": True,
+                "revealed": True,
+                "asset_key": "lab1-desk",
+                "hotspot": {
+                    "x": 0.12,
+                    "y": 0.28,
+                    "w": 0.22,
+                    "h": 0.28,
+                    "label": "Old Radio",
+                    "default_action": "inspect",
+                },
+            },
         },
         {
             "id": "drawer",
             "type": "container",
             "state": "locked",
-            "properties": {"locked": True, "revealed": True},
+            "properties": {
+                "locked": True,
+                "revealed": True,
+                "hotspot": {
+                    "x": 0.62,
+                    "y": 0.48,
+                    "w": 0.2,
+                    "h": 0.24,
+                    "label": "Drawer",
+                    "default_action": "take_item",
+                },
+            },
         },
         {
             "id": "note",
             "type": "clue",
             "state": "revealed",
-            "properties": {"revealed": True},
+            "properties": {
+                "revealed": True,
+                "hotspot": {
+                    "x": 0.38,
+                    "y": 0.22,
+                    "w": 0.18,
+                    "h": 0.18,
+                    "label": "Note",
+                    "default_action": "inspect",
+                },
+            },
         },
     ]
 
@@ -84,10 +117,16 @@ def _default_template_payload() -> dict[str, Any]:
                 {"type": "open_puzzle", "puzzle_id": "start_listen_code"},
             ],
             "inspect:note": [
-                {"type": "show_dialogue", "dialogue_id": "note_read_01", "target_id": "note"}
+                {
+                    "type": "show_dialogue",
+                    "dialogue_id": "note_read_01",
+                    "target_id": "note",
+                    "dialogue_text": "The note says: tune the old radio and listen for the code.",
+                }
             ],
-            "open_object:drawer": [{"type": "unlock", "target_id": "drawer"}],
-            "take_item:bent_key": [{"type": "add_item", "item_id": "bent_key", "target_id": "bent_key"}],
+            "take_item:drawer": [
+                {"type": "add_item", "item_id": "bent_key", "target_id": "bent_key"}
+            ],
         },
         "hint_policy": {"idle_seconds": 45, "failed_attempts_threshold": 2},
     }
@@ -224,7 +263,10 @@ def _resolve_effects(
     item_id: str | None,
     template_payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    effects_map = template_payload.get("effects", {})
+    effects_map = {
+        str(k): list(v)
+        for k, v in dict(template_payload.get("effects", {})).items()
+    }
     key_with_item = f"{action}:{target_id}:{item_id}" if item_id else None
     key_no_item = f"{action}:{target_id}"
 

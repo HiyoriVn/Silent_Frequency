@@ -1,224 +1,372 @@
 "use client";
 
-import React, { useRef, useState } from "react";
-import PuzzleContainer from "@/components/PuzzleContainer";
+import React from "react";
+import InventoryPanel from "@/components/InventoryPanel";
 import SceneRenderer from "@/components/SceneRenderer";
-import { useGameStore } from "@/stores/gameStore";
-import type { InteractionHotspot, InteractionTraceEvent } from "@/lib/types";
+import {
+  getGameState,
+  getNextPuzzle,
+  postAction,
+  submitAttempt,
+} from "@/lib/api";
+import type {
+  GameStateObject,
+  GameStateSnapshot,
+  InteractionEffect,
+  InteractionTraceEvent,
+  NextPuzzleResponse,
+} from "@/lib/types";
 
-interface AnswerPanelProps {
-  answer: string;
-  loading: boolean;
-  placeholder: string;
-  onChange: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
+type SceneHotspot = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  target_id: string;
+  default_action?: "use_item" | "inspect" | "take_item" | "open_object";
+};
+
+interface PuzzleScreenProps {
+  sessionId: string;
 }
 
-function AnswerPanel({
-  answer,
-  loading,
-  placeholder,
-  onChange,
-  onSubmit,
-}: AnswerPanelProps) {
-  return (
-    <form onSubmit={onSubmit} className="flex gap-3">
-      <input
-        type="text"
-        value={answer}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoFocus
-        disabled={loading}
-        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-2 text-neutral-100 placeholder:text-neutral-600 focus:border-cyan-500 focus:outline-none"
-      />
-      <button
-        type="submit"
-        disabled={loading || !answer.trim()}
-        className="rounded-lg bg-cyan-600 px-5 py-2 font-medium text-white transition hover:bg-cyan-500 disabled:opacity-40"
-      >
-        {loading ? "..." : "Submit"}
-      </button>
-    </form>
-  );
+interface ActivePuzzleModal {
+  puzzleId: string;
+  puzzle: NextPuzzleResponse;
 }
 
-export default function PuzzleScreen() {
-  const {
-    currentItem,
-    mastery,
-    lastFeedback,
-    loading,
-    submitAnswer,
-    fetchNextPuzzle,
-  } = useGameStore();
+function extractHotspots(objects: GameStateObject[]): SceneHotspot[] {
+  const hotspots: SceneHotspot[] = [];
 
-  const [answer, setAnswer] = useState("");
-  const [activeHotspotId, setActiveHotspotId] = useState<string | null>(null);
-  const [openedPromptRef, setOpenedPromptRef] = useState<string | null>(null);
-  const [interactionTrace, setInteractionTrace] = useState<
-    InteractionTraceEvent[]
-  >([]);
-  const traceStartMs = useRef<number>(0);
+  for (const obj of objects) {
+    const hotspot =
+      typeof obj.properties === "object" && obj.properties !== null
+        ? (obj.properties.hotspot as Record<string, unknown> | undefined)
+        : undefined;
 
-  if (!currentItem) return null;
+    if (!hotspot) continue;
+    const x = Number(hotspot.x);
+    const y = Number(hotspot.y);
+    const w = Number(hotspot.w);
+    const h = Number(hotspot.h);
+    if ([x, y, w, h].some((v) => Number.isNaN(v))) continue;
 
-  const skillMastery =
-    currentItem.skill === "vocabulary"
-      ? mastery.vocabulary
-      : currentItem.skill === "grammar"
-        ? mastery.grammar
-        : mastery.listening;
+    const label = typeof hotspot.label === "string" ? hotspot.label : obj.id;
+    const defaultAction =
+      typeof hotspot.default_action === "string"
+        ? hotspot.default_action
+        : undefined;
 
-  const isInteractive =
-    currentItem.interaction_mode === "scene_hotspot" &&
-    currentItem.interaction !== null;
-
-  const currentPromptText = !isInteractive
-    ? currentItem.prompt_text
-    : openedPromptRef && currentItem.interaction
-      ? (currentItem.interaction.prompts[openedPromptRef]?.prompt_text ?? "")
-      : "";
-
-  const canAnswer = !isInteractive || Boolean(openedPromptRef);
-
-  const appendTrace = (event: Omit<InteractionTraceEvent, "elapsed_ms">) => {
-    const now = performance.now();
-    if (traceStartMs.current === 0) {
-      traceStartMs.current = now;
-    }
-    const elapsedMs = Math.max(0, Math.round(now - traceStartMs.current));
-    setInteractionTrace((prev) => [
-      ...prev,
-      {
-        ...event,
-        elapsed_ms: elapsedMs,
-      },
-    ]);
-  };
-
-  const handleHotspotClick = (
-    hotspot: InteractionHotspot,
-    promptRef?: string,
-  ) => {
-    setActiveHotspotId(hotspot.hotspot_id);
-    appendTrace({
-      event_type: "hotspot_clicked",
-      hotspot_id: hotspot.hotspot_id,
-      prompt_ref: promptRef,
+    hotspots.push({
+      id: obj.id,
+      label,
+      x,
+      y,
+      w,
+      h,
+      target_id: obj.id,
+      default_action: defaultAction as SceneHotspot["default_action"],
     });
+  }
 
-    if (promptRef) {
-      setOpenedPromptRef(promptRef);
+  return hotspots;
+}
+
+export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
+  const [snapshot, setSnapshot] = React.useState<GameStateSnapshot | null>(
+    null,
+  );
+  const [effects, setEffects] = React.useState<InteractionEffect[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [activeHotspotId, setActiveHotspotId] = React.useState<string | null>(
+    null,
+  );
+  const [selectedItemId, setSelectedItemId] = React.useState<string | null>(
+    null,
+  );
+  const [trace, setTrace] = React.useState<InteractionTraceEvent[]>([]);
+  const [hintOpen, setHintOpen] = React.useState(false);
+  const [modal, setModal] = React.useState<ActivePuzzleModal | null>(null);
+  const [attemptAnswer, setAttemptAnswer] = React.useState("");
+  const traceStartRef = React.useRef<number>(0);
+
+  const appendTrace = React.useCallback(
+    (event: Omit<InteractionTraceEvent, "elapsed_ms">) => {
+      const now = performance.now();
+      if (traceStartRef.current === 0) {
+        traceStartRef.current = now;
+      }
+      const elapsed = Math.max(0, Math.round(now - traceStartRef.current));
+      setTrace((prev) => [...prev, { ...event, elapsed_ms: elapsed }]);
+    },
+    [],
+  );
+
+  const refreshSnapshot = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const response = await getGameState(sessionId);
+    if (!response.ok || !response.data) {
+      setError(response.error?.message ?? "Failed to load game state");
+      setLoading(false);
+      return;
+    }
+    setSnapshot(response.data.game_state);
+    setLoading(false);
+  }, [sessionId]);
+
+  React.useEffect(() => {
+    void refreshSnapshot();
+  }, [refreshSnapshot]);
+
+  const maybeOpenPuzzleModal = React.useCallback(
+    async (orderedEffects: InteractionEffect[]) => {
+      const openPuzzle = orderedEffects.find(
+        (effect) => effect.type === "open_puzzle",
+      );
+      if (!openPuzzle?.puzzle_id) return;
+
       appendTrace({
         event_type: "prompt_opened",
-        hotspot_id: hotspot.hotspot_id,
-        prompt_ref: promptRef,
+        prompt_ref: openPuzzle.puzzle_id,
       });
+      const nextPuzzleRes = await getNextPuzzle(sessionId);
+      if (!nextPuzzleRes.ok || !nextPuzzleRes.data) {
+        setError(nextPuzzleRes.error?.message ?? "Failed to load puzzle");
+        return;
+      }
+
+      setModal({
+        puzzleId: openPuzzle.puzzle_id,
+        puzzle: nextPuzzleRes.data,
+      });
+    },
+    [appendTrace, sessionId],
+  );
+
+  const runAction = React.useCallback(
+    async (payload: {
+      action: "use_item" | "inspect" | "take_item" | "open_object";
+      target_id: string;
+      item_id?: string;
+    }) => {
+      if (!snapshot) return;
+
+      setLoading(true);
+      setError(null);
+
+      const response = await postAction(sessionId, {
+        interaction_schema_version: 2,
+        action: payload.action,
+        target_id: payload.target_id,
+        item_id: payload.item_id,
+        game_state_version: snapshot.game_state_version,
+      });
+
+      if (!response.ok || !response.data) {
+        setError(response.error?.message ?? "Action failed");
+        setLoading(false);
+        return;
+      }
+
+      const orderedEffects = response.data.effects ?? [];
+      setEffects(orderedEffects);
+      setSnapshot(response.data.game_state);
+      setLoading(false);
+      await maybeOpenPuzzleModal(orderedEffects);
+    },
+    [maybeOpenPuzzleModal, sessionId, snapshot],
+  );
+
+  const handleHotspotClicked = async (hotspot: SceneHotspot) => {
+    setActiveHotspotId(hotspot.id);
+    appendTrace({ event_type: "hotspot_clicked", hotspot_id: hotspot.id });
+
+    if (selectedItemId) {
+      await runAction({
+        action: "use_item",
+        target_id: hotspot.target_id,
+        item_id: selectedItemId,
+      });
+      setSelectedItemId(null);
+      return;
     }
+
+    const action = hotspot.default_action ?? "inspect";
+    if (action === "inspect") {
+      appendTrace({ event_type: "prompt_opened", hotspot_id: hotspot.id });
+    }
+
+    await runAction({
+      action,
+      target_id: hotspot.target_id,
+    });
   };
 
-  const handleClosePrompt = () => {
-    if (!openedPromptRef) return;
-    appendTrace({ event_type: "prompt_closed", prompt_ref: openedPromptRef });
-    setOpenedPromptRef(null);
-    setAnswer("");
+  const submitPuzzleAttempt = async () => {
+    if (!modal || !attemptAnswer.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    const result = await submitAttempt(sessionId, {
+      variant_id: modal.puzzle.variant_id,
+      answer: attemptAnswer.trim(),
+      response_time_ms: 0,
+      hint_count_used: hintOpen ? 1 : 0,
+      interaction_trace: trace.length > 0 ? trace : undefined,
+    });
+
+    if (!result.ok) {
+      setError(result.error?.message ?? "Attempt failed");
+      setLoading(false);
+      return;
+    }
+
+    setModal(null);
+    setAttemptAnswer("");
+    setTrace([]);
+    setHintOpen(false);
+    setLoading(false);
+    await refreshSnapshot();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canAnswer || !answer.trim()) return;
-
-    await submitAnswer(
-      answer.trim(),
-      0,
-      interactionTrace.length > 0 ? interactionTrace : undefined,
-    );
-    setAnswer("");
-  };
+  const hotspots = snapshot ? extractHotspots(snapshot.room_state) : [];
+  const assetKey = (() => {
+    if (!snapshot) return "lab1-desk";
+    const first = snapshot.room_state[0];
+    const value = first?.properties?.asset_key;
+    return typeof value === "string" ? value : "lab1-desk";
+  })();
 
   return (
-    <PuzzleContainer
-      skill={currentItem.skill}
-      mastery={skillMastery}
-      tier={currentItem.difficulty_tier}
-      timeLimit={currentItem.time_limit_sec}
-    >
-      {isInteractive && currentItem.interaction ? (
-        <>
+    <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="rounded-lg border border-neutral-700 bg-neutral-900 p-4">
+        <h2 className="mb-3 text-sm uppercase tracking-wider text-neutral-400">
+          Gameplay v2 Room: {snapshot?.room_id ?? "..."}
+        </h2>
+
+        {loading && (
+          <p className="mb-3 text-sm text-neutral-500">Syncing state...</p>
+        )}
+        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+
+        {snapshot && (
           <SceneRenderer
-            interaction={currentItem.interaction}
+            assetKey={assetKey}
+            hotspots={hotspots}
             activeHotspotId={activeHotspotId}
-            onHotspotClick={handleHotspotClick}
+            onHotspotClicked={handleHotspotClicked}
           />
+        )}
 
-          <div className="mb-4 text-sm text-neutral-400">
-            {openedPromptRef
-              ? currentPromptText
-              : "Click a hotspot to reveal the prompt."}
-          </div>
-
-          {openedPromptRef && !lastFeedback && (
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={handleClosePrompt}
-                className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
-              >
-                Close Prompt
-              </button>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="mb-6 text-center text-lg text-neutral-200">
-          {currentItem.prompt_text}
-        </div>
-      )}
-
-      {!lastFeedback ? (
-        canAnswer ? (
-          <AnswerPanel
-            answer={answer}
-            loading={loading}
-            placeholder="Type your answer..."
-            onChange={setAnswer}
-            onSubmit={handleSubmit}
-          />
-        ) : (
-          <div className="rounded-md border border-neutral-700 bg-neutral-800/60 p-3 text-sm text-neutral-400">
-            Input is locked until a prompt hotspot is selected.
-          </div>
-        )
-      ) : (
-        <div className="space-y-4 text-center">
-          <p
-            className={`text-lg font-semibold ${
-              lastFeedback.is_correct ? "text-green-400" : "text-red-400"
-            }`}
-          >
-            {lastFeedback.is_correct ? "Correct" : "Incorrect"}
-          </p>
-          {!lastFeedback.is_correct && (
-            <p className="text-sm text-neutral-400">
-              Answer:{" "}
-              <span className="text-neutral-200">
-                {lastFeedback.correct_answers.join(", ")}
-              </span>
+        <div className="mt-4 space-y-2 text-xs text-neutral-400">
+          <p>State Version: {snapshot?.game_state_version ?? 0}</p>
+          {selectedItemId && (
+            <p className="text-cyan-300">
+              Selected item: {selectedItemId}. Click a hotspot target to use it.
             </p>
           )}
-          <p className="text-xs text-neutral-500">
-            Mastery: {Math.round(lastFeedback.p_learned_before * 100)}%{" -> "}
-            {Math.round(lastFeedback.p_learned_after * 100)}%
-          </p>
-          <button
-            onClick={() => fetchNextPuzzle()}
-            className="rounded-lg bg-neutral-700 px-6 py-2 text-sm text-neutral-200 transition hover:bg-neutral-600"
-          >
-            Next Puzzle
-          </button>
+        </div>
+
+        {effects.length > 0 && (
+          <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-800/70 p-3">
+            <h3 className="mb-2 text-xs uppercase tracking-wider text-neutral-300">
+              Last Effects (Ordered)
+            </h3>
+            <ul className="space-y-1 text-xs text-neutral-400">
+              {effects.map((effect, index) => (
+                <li key={`${effect.type}-${index}`}>
+                  {index + 1}. {effect.type}
+                  {effect.target_id ? ` -> ${effect.target_id}` : ""}
+                  {effect.puzzle_id ? ` -> ${effect.puzzle_id}` : ""}
+                  {effect.dialogue_text ? ` (${effect.dialogue_text})` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <InventoryPanel
+          items={snapshot?.inventory ?? []}
+          selectedItemId={selectedItemId}
+          onSelectItem={setSelectedItemId}
+          onClearSelection={() => setSelectedItemId(null)}
+        />
+
+        <div className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-300">
+              Hint
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                setHintOpen((prev) => !prev);
+                if (!hintOpen) {
+                  appendTrace({ event_type: "hint_opened" });
+                }
+              }}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              {hintOpen ? "Hide" : "Open"}
+            </button>
+          </div>
+          {hintOpen && (
+            <p className="text-xs text-neutral-400">
+              Try inspecting the note, then collecting what you need from the
+              drawer.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {modal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Puzzle Modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        >
+          <div className="w-full max-w-lg rounded-lg border border-neutral-700 bg-neutral-900 p-5">
+            <h3 className="mb-2 text-lg font-semibold text-neutral-100">
+              Puzzle Opened: {modal.puzzleId}
+            </h3>
+            <p className="mb-4 text-sm text-neutral-300">
+              {modal.puzzle.prompt_text}
+            </p>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={attemptAnswer}
+                onChange={(event) => setAttemptAnswer(event.target.value)}
+                className="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
+                placeholder="Submit answer via POST /attempts"
+              />
+              <button
+                type="button"
+                onClick={submitPuzzleAttempt}
+                disabled={loading || !attemptAnswer.trim()}
+                className="rounded-md bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+              >
+                Submit
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setModal(null)}
+              className="mt-3 text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
-    </PuzzleContainer>
+    </section>
   );
 }
