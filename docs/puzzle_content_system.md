@@ -1,4 +1,4 @@
-﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 room/object/item schema and asset guidance -->
+<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 room/object/item schema and asset guidance -->
 
 # Puzzle Content System
 
@@ -226,6 +226,10 @@ class ItemModel(BaseModel):
     reusable: bool = False
 ```
 
+> **Item semantics — clarification:** `reusable: bool` belongs to the **item definition / content model** (this file, `ItemModel`). It describes whether the item survives use (for example a clue card is reusable; a one-time key is not). `consumed: bool` belongs to the **runtime inventory snapshot** in API responses (see `gameplay_architecture.md`, `ItemModel.consumed`). These are not contradictory: content authoring sets reusable intent; the runtime state tracks consumption. Do not add `consumed` to content definition files.
+
+> **Object state model — clarification:** Content authoring uses explicit **boolean flags** in `initial_state` (for example `locked: true`, `revealed: true`, `collected: false`). This is the canonical authoring format. Runtime snapshots currently use an enum `state` field alongside booleans. The intended direction is to prefer explicit flags where possible; avoid introducing new mixed enum + boolean combinations. The existing runtime model may be harmonised in a future schema revision.
+
 ### JSON Schema Snippets (compact)
 
 `RoomDefinition` (minimal):
@@ -299,7 +303,9 @@ class ItemModel(BaseModel):
 - Scene assets should use stable keys and matching file names (`scene_radio_room_v2` -> `radio_room_v2.png`).
 - Keep IDs immutable after shipping to avoid broken saves, telemetry joins, and replay mismatches.
 
-### Effects Array (example)
+### Effects Array (schema fragment only)
+
+> The following is a **schema fragment** illustrating the `effects[]` structure. Full API responses always use the standard envelope: `ok`, `data`, `error`, `meta`.
 
 ```json
 {
