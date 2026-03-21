@@ -88,6 +88,7 @@
 - Server must enforce mode on each v2 endpoint: reject gameplay v2 calls when `session.mode != gameplay_v2`.
 - Gameplay v2 must also be gated by a global feature flag (for example `GAMEPLAY_V2_ENABLED=true|false`).
 - If the global flag is off, server should gracefully degrade to canonical Phase-3 flow and return a clear error envelope for blocked v2 endpoints.
+- Example mode-gate failure: `403` with `error.code="MODE_MISMATCH"`.
 
 ### Typed Action Payload Requirement
 

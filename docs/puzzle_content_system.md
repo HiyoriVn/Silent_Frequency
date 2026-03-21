@@ -158,6 +158,7 @@ Audio delivery is intentionally deferred. Add real TTS/audio URLs later without 
 
 ```json
 {
+  "interaction_schema_version": 2,
   "id": "desk_drawer",
   "label": "Desk Drawer",
   "shape": { "kind": "rect", "x": 0.62, "y": 0.53, "w": 0.2, "h": 0.2 },
@@ -301,12 +302,15 @@ class ItemModel(BaseModel):
 ### Effects Array (example)
 
 ```json
-[
-  { "type": "unlock", "target_id": "desk_drawer" },
-  { "type": "reveal", "target_id": "drawer_note" },
-  { "type": "add_item", "item_id": "note_fragment_1" },
-  { "type": "open_puzzle", "puzzle_id": "grammar_panel_02" }
-]
+{
+  "interaction_schema_version": 2,
+  "effects": [
+    { "type": "unlock", "target_id": "desk_drawer" },
+    { "type": "reveal", "target_id": "drawer_note" },
+    { "type": "add_item", "item_id": "note_fragment_1" },
+    { "type": "open_puzzle", "puzzle_id": "grammar_panel_02" }
+  ]
+}
 ```
 
 ### Asset Conventions

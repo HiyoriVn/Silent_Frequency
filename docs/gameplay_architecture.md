@@ -22,6 +22,7 @@ Mode and feature-flag enforcement:
 - v2 endpoints must reject requests when `session.mode != gameplay_v2`.
 - v2 endpoints must reject requests when `GAMEPLAY_V2_ENABLED=false`.
 - Canonical Phase-3 endpoints remain available regardless of v2 flag state.
+- Recommended mode-gate error: `403` with `error.code="MODE_MISMATCH"`.
 
 ## Canonical Data Models (Pydantic examples)
 
@@ -352,8 +353,8 @@ Recommended envelope:
   "ok": false,
   "data": null,
   "error": {
-    "code": "ACTION_CONFLICT",
-    "message": "Object state changed before action application."
+    "code": "INVALID_ACTION",
+    "message": "Unsupported action for target_id=old_radio."
   },
   "meta": { "interaction_schema_version": 2 }
 }
@@ -361,12 +362,11 @@ Recommended envelope:
 
 Recommended mapping:
 
-- `400 Bad Request`: invalid schema, unsupported action, invalid target payload.
-- `401 Unauthorized`: session token missing/expired.
-- `403 Forbidden`: session exists but actor is not allowed to mutate.
-- `404 Not Found`: session, room, object, or item not found.
-- `409 Conflict`: stale state, lock contention, duplicate/unsafe replay.
-- `500 Internal Server Error`: unexpected backend failures.
+- `400` invalid payload / unsupported action / schema mismatch.
+- `403` authenticated but not allowed to mutate this session (including `MODE_MISMATCH` when session mode is not `gameplay_v2` or v2 is disabled by flag).
+- `404` session or target object not found.
+- `409` action conflict or stale state.
+- `500` unexpected server error.
 
 Stale state conflict (`409`) example:
 

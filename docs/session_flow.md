@@ -153,7 +153,9 @@ For student maintainers:
 - Backend is the canonical authority for room/object/inventory/puzzle states.
 - Frontend renders server responses and emits actions only.
 - Frontend must not make progression decisions or canonical state transitions.
+- `session.mode` must be set at session creation and remain immutable for the full session.
 - Server must enforce that `session.mode == gameplay_v2` and `GAMEPLAY_V2_ENABLED=true` before serving v2 endpoints.
+- Example mode-gate failure: `403` with `error.code="MODE_MISMATCH"`.
 
 ### GET /api/sessions/{session_id}/game-state
 
@@ -294,8 +296,8 @@ Recommended error envelope:
   "ok": false,
   "data": null,
   "error": {
-    "code": "INVALID_ACTION_PAYLOAD",
-    "message": "Unsupported action for this target."
+    "code": "INVALID_ACTION",
+    "message": "Unsupported action for target_id=old_radio."
   },
   "meta": { "interaction_schema_version": 2 }
 }
@@ -303,12 +305,11 @@ Recommended error envelope:
 
 Recommended mapping:
 
-- `400`: invalid payload or schema mismatch.
-- `401`: authentication missing or expired.
-- `403`: authenticated but unauthorized for this session.
-- `404`: session or target resource not found.
-- `409`: action conflict, stale state, or unsafe duplicate replay.
-- `500`: unexpected server error.
+- `400` invalid payload / unsupported action / schema mismatch.
+- `403` authenticated but not allowed to mutate this session (including `MODE_MISMATCH` when session mode is not `gameplay_v2` or v2 is disabled by flag).
+- `404` session or target object not found.
+- `409` action conflict or stale state.
+- `500` unexpected server error.
 
 ### Auto-hint Policy (experimental — gameplay v2)
 
