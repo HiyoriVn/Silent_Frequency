@@ -1,4 +1,4 @@
-﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and hardened gameplay v2 contracts with concrete models, version semantics, and pilot-safe constraints -->
+<!-- CHANGELOG: updated 2026-03-21: normalized to English and hardened gameplay v2 contracts with concrete models, version semantics, and pilot-safe constraints -->
 
 # Gameplay Architecture (experimental — gameplay v2)
 
@@ -147,6 +147,10 @@ class ActionResponse(BaseModel):
     meta: dict[str, str | int] = Field(default_factory=lambda: {"interaction_schema_version": 2})
 ```
 
+> **Item semantics — clarification:** `reusable: bool` belongs to the **item definition / content model** (authored in `backend/app/content/items/`). It describes whether an item survives use. `consumed: bool` belongs to the **runtime inventory snapshot** returned in API responses (for example `ActionResponseData.inventory`). These fields are not contradictory: authoring sets reusability intent; the runtime snapshot reflects current consumption state. Implementors must not conflate or duplicate the two.
+
+> **Object state model — clarification:** Runtime object state MUST NOT mix enum state plus duplicated boolean flags as a long-term model. For Phase 4 implementation, developers SHOULD treat explicit boolean flags (`locked`, `revealed`, `collected`) as canonical where possible. The enum-based runtime state is transitional and MUST NOT be expanded further.
+
 ## JSON Schemas (minimal references)
 
 ### ActionRequest JSON Schema (minimal)
@@ -272,6 +276,8 @@ class ActionResponse(BaseModel):
 ## `client_action_id` Dedupe Semantics
 
 - `client_action_id` is optional but recommended for all mutating actions.
+- Phase 4 implementations may accept `client_action_id` without enforcing strict idempotency guarantees.
+- Full dedupe persistence (database table and replay guarantees) may be deferred until after pilot stabilization.
 - Dedupe scope: `(session_id, client_action_id)`.
 - If duplicate request is received, server should return the previously persisted response payload and status.
 - If replay safety cannot be guaranteed (for example partial persistence), return `409` with code `DUPLICATE_ACTION_UNCERTAIN`.

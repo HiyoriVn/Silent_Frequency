@@ -1,4 +1,4 @@
-﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded experimental gameplay v2 endpoint contracts and conflict semantics -->
+<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded experimental gameplay v2 endpoint contracts and conflict semantics -->
 
 # Silent Frequency Session Flow (Phase 2)
 
@@ -162,6 +162,7 @@ For student maintainers:
 - Purpose: fetch canonical gameplay snapshot for v2 sessions.
 - Response must include `interaction_schema_version`, `game_state_version`, and `updated_at`.
 - Response should include `room_state`, `inventory`, and `dialogue_queue`.
+- Inventory item shape MUST be identical across `GET /game-state` and `POST /action` responses (`id`, `display_name`, `category`, `consumed` when present).
 - Server should send `ETag: W/"{session_id}:{game_state_version}"` and support `If-None-Match` for efficient polling.
 
 ```json
@@ -179,7 +180,12 @@ For student maintainers:
       ]
     },
     "inventory": [
-      { "id": "bent_key", "display_name": "Bent Key", "category": "tool" }
+      {
+        "id": "bent_key",
+        "display_name": "Bent Key",
+        "category": "tool",
+        "consumed": false
+      }
     ],
     "dialogue_queue": []
   },
@@ -217,7 +223,14 @@ For student maintainers:
       "room_id": "radio_room_v2",
       "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
     },
-    "inventory": [{ "id": "bent_key", "consumed": true }],
+    "inventory": [
+      {
+        "id": "bent_key",
+        "display_name": "Bent Key",
+        "category": "tool",
+        "consumed": true
+      }
+    ],
     "dialogue_queue": [
       { "id": "radio_unlocked", "text": "The dial clicks into place." }
     ],
@@ -269,6 +282,7 @@ Stale state response example (`409 CONFLICT_STALE_STATE`):
 
 - If an action conflicts with current canonical state, return `409 Conflict`.
 - Include machine-readable conflict details and the latest canonical `room_state` in the error envelope.
+- On `409 CONFLICT_STALE_STATE`, frontend SHOULD refetch `GET /game-state`, reconcile UI to server snapshot, and avoid applying local optimistic state updates.
 
 ```json
 {

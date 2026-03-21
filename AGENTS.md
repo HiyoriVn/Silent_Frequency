@@ -1,4 +1,4 @@
-﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 implementation constraints, typed payloads, and rollback guidance -->
+<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 implementation constraints, typed payloads, and rollback guidance -->
 
 # AGENTS.md
 
@@ -138,6 +138,7 @@
   - `item_id` (nullable)
   - `timestamp`
   - `resulting_effects[]`
+- `resulting_effects[]` should contain minimal effect references only (type and target/id fields), not full canonical room state snapshots.
 - Optional field:
   - `client_action_id`
 
