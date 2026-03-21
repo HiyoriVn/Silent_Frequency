@@ -123,9 +123,9 @@ Audio delivery is intentionally deferred. Add real TTS/audio URLs later without 
 - Use stable IDs; avoid renaming existing `puzzle_id` values.
 - Treat JSON files as source of truth; avoid hardcoded puzzle data in Python.
 
-## Room/Object/Item Schema (experimental - gameplay v2)
+## Room/Object/Item Schema (experimental — gameplay v2)
 
-> **experimental - gameplay v2:** Additive content model for room interactions. Existing puzzle files in `puzzles/` remain unchanged.
+> **experimental — gameplay v2:** Additive content model for room interactions. Existing puzzle files in `puzzles/` remain unchanged.
 
 ### Room JSON (example)
 
@@ -213,7 +213,7 @@ class ObjectModel(BaseModel):
         "flavor", "collectible", "clue", "audio", "puzzle_trigger", "locked_container"
     ]
     initial_state: ObjectState
-    metadata: dict[str, str | int | bool | None] = {}
+    metadata: dict[str, str | int | bool | None] = Field(default_factory=dict)
 
 
 class ItemModel(BaseModel):
@@ -224,6 +224,79 @@ class ItemModel(BaseModel):
     payload: dict[str, str | None]
     reusable: bool = False
 ```
+
+### JSON Schema Snippets (compact)
+
+`RoomDefinition` (minimal):
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["interaction_schema_version", "room_id", "objects"],
+  "properties": {
+    "interaction_schema_version": { "const": 2 },
+    "room_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "shape",
+          "interaction_kind",
+          "initial_state"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "shape": {
+            "type": "object",
+            "required": ["kind", "x", "y", "w", "h"],
+            "properties": {
+              "kind": { "const": "rect" },
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "w": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "h": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+`ItemDefinition` (minimal):
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "interaction_schema_version",
+    "id",
+    "display_name",
+    "category",
+    "payload"
+  ],
+  "properties": {
+    "interaction_schema_version": { "const": 2 },
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "category": { "enum": ["tool", "clue", "media"] },
+    "payload": { "type": "object" },
+    "reusable": { "type": "boolean" }
+  }
+}
+```
+
+### Naming Conventions (gameplay v2)
+
+- IDs are lowercase snake_case (`room_id`, `object_id`, `item_id`, `hotspot_id`, `puzzle_id`).
+- Scene assets should use stable keys and matching file names (`scene_radio_room_v2` -> `radio_room_v2.png`).
+- Keep IDs immutable after shipping to avoid broken saves, telemetry joins, and replay mismatches.
 
 ### Effects Array (example)
 
@@ -254,4 +327,3 @@ class ItemModel(BaseModel):
 - Place item definitions in `backend/app/content/items/`.
 - Keep `backend/app/content/puzzles/` unchanged for canonical learning content.
 - Validate references between room objects, item IDs, and puzzle IDs during seed.
-

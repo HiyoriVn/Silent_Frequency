@@ -203,9 +203,10 @@ Short risk register:
 ## Refactoring Priorities
 
 Prioritized by:
-1) experimental validity,
-2) maintainable architecture,
-3) low-risk incremental rollout.
+
+1. experimental validity,
+2. maintainable architecture,
+3. low-risk incremental rollout.
 
 ### Priority P0 (do first)
 
@@ -290,7 +291,7 @@ Silent Frequency has a solid base architecture, but progression authority and ex
 
 ## Appendix: Implications of moving to True Escape-Room (gameplay v2)
 
-> **experimental - gameplay v2:** Risk and readiness guidance for moving from fixed puzzle flow to true room-action gameplay.
+> **experimental — gameplay v2:** Risk and readiness guidance for moving from fixed puzzle flow to true room-action gameplay.
 
 ### Experimental validity risks
 
@@ -298,11 +299,23 @@ Silent Frequency has a solid base architecture, but progression authority and ex
 - Ordering variance: clue/action order may alter puzzle readiness and measured outcomes.
 - Time-on-task variance: exploratory interactions may inflate or shift timing compared with canonical Phase-3 puzzle time.
 
+Mitigations:
+
+- Keep mode assignment immutable per session (`phase3` or `gameplay_v2`) and never switch in-session.
+- Log canonical `game_state_version`, `client_action_id`, and action timestamps for replayable action timelines.
+- Require `open_puzzle` effects to route scoring through canonical attempts endpoint so learning metrics remain comparable.
+
 ### Test implications
 
 - Add backend unit coverage for action validation, state transitions, effect mapping, and dedupe behavior.
 - Add integration tests for session create -> action -> state update -> telemetry (`game_action`).
 - Add content QA checks for room/object/item references and effect chain consistency.
+
+Pilot acceptance gates:
+
+- `409 CONFLICT_STALE_STATE` path verified with stale `client_game_state_version`.
+- Duplicate `client_action_id` replay returns idempotent success (no double mutation).
+- Feature flag rollback (`GAMEPLAY_V2_ENABLED=false`) verified without breaking Phase-3 canonical flow.
 
 ### Data-analysis implications
 
@@ -310,11 +323,24 @@ Silent Frequency has a solid base architecture, but progression authority and ex
 - Track both `game_action` and `puzzle_interaction_trace` with consistent identifiers.
 - Segment analyses by mode (`phase3` vs `gameplay_v2`) to avoid mixed-cohort conclusions.
 
+Required analysis dimensions for v2 pilots:
+
+- Completion rate by mode and by room.
+- Hint-opened distribution and time-to-first-hint.
+- Action diversity and dead-end action ratio.
+- Puzzle solve latency once `open_puzzle` is emitted.
+
 ### Refactor checklist for moving to v2
 
 - Seed validator supports `interaction_schema_version == 2` for v2 content.
 - Action API tests cover success, conflict, and duplicate `client_action_id` behavior.
 - Telemetry completeness checks confirm required `game_action` fields.
-- Coexistence path remains intact for `POST /api/sessions/{id}/attempts`.
+- Coexistence path remains intact for `POST /api/sessions/{session_id}/attempts`.
 - Feature flag/session-config gate exists before broader rollout.
 
+### Rollout recommendation
+
+1. Ship behind global flag (`GAMEPLAY_V2_ENABLED=false` by default).
+2. Enable for internal QA sessions only, collect telemetry and replay traces.
+3. Run a limited pilot cohort with explicit mode segmentation in dashboards.
+4. Promote only after conflict/idempotency/error-rate SLOs are stable and canonical Phase-3 metrics are unaffected.

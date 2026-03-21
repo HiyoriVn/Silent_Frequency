@@ -82,9 +82,9 @@ Fix (early-stage safe option):
 
 Because this project is still early-stage, local reset is acceptable when schema/content assumptions change.
 
-## Gameplay v2 Content Locations (experimental - gameplay v2)
+## Gameplay v2 Content Locations (experimental — gameplay v2)
 
-> **experimental - gameplay v2:** Additive seeding support for room/object/item content. Existing puzzle seeding remains unchanged.
+> **experimental — gameplay v2:** Additive seeding support for room/object/item content. Existing puzzle seeding remains unchanged.
 
 ### Content Placement
 
@@ -107,9 +107,19 @@ backend/app/content/
 
 - Validate `interaction_schema_version == 2` for v2 room/item files.
 - Validate object IDs are unique within each room.
+- Validate item IDs are unique across item files.
 - Validate each hotspot references an existing `object_id`.
 - Validate metadata puzzle references point to existing puzzles when present (for example `metadata.puzzle_id`).
 - Validate item references used by objects (`unlock_item_id`, rewards, or effect mappings) exist in item data when required.
+- Validate shape bounds for clickable regions (`x`, `y` in `[0,1]`; `w`, `h` in `(0,1]`).
+- Validate allowed enums (`interaction_kind`, item `category`) before any DB writes.
+
+Recommended validator execution order:
+
+1. Parse and schema-check each file independently.
+2. Build in-memory indexes for rooms, objects, items, and puzzle IDs.
+3. Resolve cross-references (hotspots, unlock items, puzzle links).
+4. Abort before persistence if any validation step fails.
 
 ### Seed Failure Behavior
 
@@ -128,3 +138,12 @@ Example failure message:
 SEED_REFERENCE_ERROR: room 'radio_room_v2' hotspot 'hs_radio' references unknown object_id 'old_radio_typo'.
 ```
 
+Line-level error guidance:
+
+- Include file path and line/column when available.
+- Preferred format: `<ERROR_CODE>: <file>:<line>:<column>: <message>`.
+- Example:
+
+```text
+SEED_VALIDATION_ERROR: backend/app/content/rooms/radio_room_v2.json:27:15: field 'interaction_kind' must be one of ['flavor','collectible','clue','audio','puzzle_trigger','locked_container'].
+```

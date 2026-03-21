@@ -63,7 +63,7 @@ Backward compatibility:
 - Plain puzzles continue to function with no content rewrite.
 - Existing clients can ignore new fields.
 
-### POST /api/sessions/{id}/attempts
+### POST /api/sessions/{session_id}/attempts
 
 Existing request fields and response fields are unchanged.
 Added optional request field:
@@ -157,7 +157,7 @@ Future schema extensions must follow these rules:
 
 ## Appendix: Gameplay Engine v2 (experimental)
 
-> **experimental - gameplay v2:** Proposal-only extension for true room/object/inventory actions. This does not replace the canonical Phase-3 contract.
+> **experimental — gameplay v2:** Proposal-only extension for true room/object/inventory actions. This does not replace the canonical Phase-3 contract.
 
 ### Rationale
 
@@ -165,10 +165,10 @@ Gameplay v2 introduces a declarative action/effects layer so the project can sup
 
 ### Allowed Features
 
-- `POST /api/sessions/{id}/action` command API with typed payloads.
-- `GET /api/sessions/{id}/game-state` snapshot API.
+- `POST /api/sessions/{session_id}/action` command API with typed payloads.
+- `GET /api/sessions/{session_id}/game-state` snapshot API.
 - Declarative `effects[]` in action responses.
-- Coexistence with `POST /api/sessions/{id}/attempts` for learning puzzles.
+- Coexistence with `POST /api/sessions/{session_id}/attempts` for learning puzzles.
 
 ### Forbidden Features
 
@@ -217,4 +217,5 @@ Gameplay v2 introduces a declarative action/effects layer so the project can sup
 ### Idempotency and Dedupe
 
 For unstable networks, clients should send optional `client_action_id` (UUID). Server-side dedupe should be scoped per session and action id. Recommended behavior: return the original `200` response for duplicates; if replay safety cannot be guaranteed, return `409` with a machine-readable explanation.
+
 

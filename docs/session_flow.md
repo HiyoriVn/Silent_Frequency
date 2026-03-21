@@ -1,4 +1,4 @@
-﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and added exploratory gameplay-mode-v2 API semantics -->
+﻿<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded experimental gameplay v2 endpoint contracts and conflict semantics -->
 
 # Silent Frequency Session Flow (Phase 2)
 
@@ -52,7 +52,7 @@ Get next puzzle:
 
 Submit attempt:
 
-- `POST /api/sessions/{id}/attempts`
+- `POST /api/sessions/{session_id}/attempts`
 - Backend updates BKT and session progression index.
 - Response now includes: `current_level_index`, `session_complete`.
 
@@ -144,20 +144,22 @@ For student maintainers:
 4. Reuse shared puzzle UI wrappers instead of duplicating state logic.
 5. Prefer one source of truth: backend progression response fields.
 
-## Alternate Gameplay API (exploratory / gameplay-mode-v2)
+## Alternate Gameplay API (experimental)
 
-> **experimental - gameplay v2:** Additive API path for room/object/inventory interactions. Does not replace the canonical fixed 9-step flow.
+> **experimental — gameplay v2:** Additive API path for room/object/inventory interactions. Does not replace the canonical fixed 9-step flow.
 
 ### Authority Rules
 
 - Backend is the canonical authority for room/object/inventory/puzzle states.
 - Frontend renders server responses and emits actions only.
 - Frontend must not make progression decisions or canonical state transitions.
+- Server must enforce that `session.mode == gameplay_v2` and `GAMEPLAY_V2_ENABLED=true` before serving v2 endpoints.
 
-### GET /api/sessions/{id}/game-state
+### GET /api/sessions/{session_id}/game-state
 
 - Purpose: fetch canonical gameplay snapshot for v2 sessions.
-- Response must include `interaction_schema_version` and `game_state_version`.
+- Response must include `interaction_schema_version`, `game_state_version`, and `updated_at`.
+- Response should include `room_state`, `inventory`, and `dialogue_queue`.
 - Server should send `ETag: W/"{session_id}:{game_state_version}"` and support `If-None-Match` for efficient polling.
 
 ```json
@@ -166,6 +168,7 @@ For student maintainers:
   "data": {
     "interaction_schema_version": 2,
     "game_state_version": 14,
+    "updated_at": "2026-03-21T10:31:00Z",
     "room_state": {
       "room_id": "radio_room_v2",
       "objects": [
@@ -176,17 +179,17 @@ For student maintainers:
     "inventory": [
       { "id": "bent_key", "display_name": "Bent Key", "category": "tool" }
     ],
-    "dialogue": []
+    "dialogue_queue": []
   },
   "error": null,
   "meta": { "interaction_schema_version": 2 }
 }
 ```
 
-### POST /api/sessions/{id}/action
+### POST /api/sessions/{session_id}/action
 
 - Purpose: resolve one gameplay action atomically.
-- Request supports optional dedupe key `client_action_id`.
+- Request supports optional dedupe key `client_action_id` and optional optimistic concurrency key `client_game_state_version`.
 - Suggested action types: `inspect`, `collect`, `use_item`, `open_container`, `talk`, `trigger`.
 
 ```json
@@ -195,7 +198,8 @@ For student maintainers:
   "action": "use_item",
   "target_id": "old_radio",
   "item_id": "bent_key",
-  "client_action_id": "6f627d0f-a72f-4a07-984f-dbe9f42c4b15"
+  "client_action_id": "6f627d0f-a72f-4a07-984f-dbe9f42c4b15",
+  "client_game_state_version": 14
 }
 ```
 
@@ -209,26 +213,54 @@ For student maintainers:
     ],
     "room_state": {
       "room_id": "radio_room_v2",
-      "objects": [
-        { "id": "old_radio", "state": "unlocked", "revealed": true }
-      ]
+      "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
     },
-    "inventory": [
-      { "id": "bent_key", "consumed": true }
-    ],
-    "dialogue": [
+    "inventory": [{ "id": "bent_key", "consumed": true }],
+    "dialogue_queue": [
       { "id": "radio_unlocked", "text": "The dial clicks into place." }
-    ]
+    ],
+    "game_state_version": 15
   },
   "error": null,
   "meta": { "interaction_schema_version": 2 }
 }
 ```
 
-### Coexistence with POST /api/sessions/{id}/attempts
+Stale state response example (`409 CONFLICT_STALE_STATE`):
 
-- `POST /api/sessions/{id}/attempts` remains the canonical learning endpoint.
-- When action resolution returns `open_puzzle`, the client should open the puzzle UI and submit answer attempts through `POST /api/sessions/{id}/attempts`.
+```json
+{
+  "ok": false,
+  "data": {
+    "interaction_schema_version": 2,
+    "game_state_version": 15,
+    "updated_at": "2026-03-21T10:34:00Z",
+    "room_state": {
+      "room_id": "radio_room_v2",
+      "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
+    },
+    "inventory": [],
+    "dialogue_queue": []
+  },
+  "error": {
+    "code": "CONFLICT_STALE_STATE",
+    "message": "client_game_state_version is stale."
+  },
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+### Dedupe and Idempotency Behavior
+
+- Server should dedupe by `(session_id, client_action_id)` when `client_action_id` is provided.
+- Recommended duplicate handling:
+  - return the previous `200` response payload for confirmed duplicates, or
+  - return `409` with canonical `room_state` when replay certainty cannot be guaranteed.
+
+### Coexistence with POST /api/sessions/{session_id}/attempts
+
+- `POST /api/sessions/{session_id}/attempts` remains the canonical learning endpoint.
+- When action resolution returns `open_puzzle`, the client should open the puzzle UI and submit answer attempts through `POST /api/sessions/{session_id}/attempts`.
 - BKT and mastery updates remain tied to attempts, not generic room actions.
 
 ### Concurrency Guidance
@@ -242,9 +274,7 @@ For student maintainers:
   "data": {
     "room_state": {
       "room_id": "radio_room_v2",
-      "objects": [
-        { "id": "old_radio", "state": "unlocked", "revealed": true }
-      ]
+      "objects": [{ "id": "old_radio", "state": "unlocked", "revealed": true }]
     }
   },
   "error": {
@@ -255,3 +285,53 @@ For student maintainers:
 }
 ```
 
+### Error Envelope and HTTP Mapping
+
+Recommended error envelope:
+
+```json
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "INVALID_ACTION_PAYLOAD",
+    "message": "Unsupported action for this target."
+  },
+  "meta": { "interaction_schema_version": 2 }
+}
+```
+
+Recommended mapping:
+
+- `400`: invalid payload or schema mismatch.
+- `401`: authentication missing or expired.
+- `403`: authenticated but unauthorized for this session.
+- `404`: session or target resource not found.
+- `409`: action conflict, stale state, or unsafe duplicate replay.
+- `500`: unexpected server error.
+
+### Auto-hint Policy (experimental — gameplay v2)
+
+- Auto-hint policy is backend-configurable and must not be inferred client-side.
+- Suggested configuration:
+
+```json
+{
+  "idle_seconds": 45,
+  "failed_attempts_threshold": 2
+}
+```
+
+- Required telemetry event for hint disclosure:
+
+```json
+{
+  "event_type": "hint_opened",
+  "payload": {
+    "session_id": "4dc9c5f2-8fdb-45f2-9f31-0a6b4f87a111",
+    "hint_type": "auto",
+    "hint_id": "radio_hint_01",
+    "timestamp": "2026-03-21T10:24:00Z"
+  }
+}
+```

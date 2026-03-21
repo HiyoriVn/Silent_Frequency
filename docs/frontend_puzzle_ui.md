@@ -104,9 +104,19 @@ To extend interaction safely:
 5. Validate new interaction features at seed/schema level before UI work.
 6. Do not move progression, scoring, or mastery logic into frontend.
 
-## Inventory & Knowledge Journal (experimental - gameplay v2)
+## Asset and Identifier Conventions (experimental — gameplay v2)
 
-> **experimental - gameplay v2:** Additive UI for room-based sessions only.
+- Keep IDs and keys aligned across backend content and frontend assets:
+  - `room_id`, `object_id`, `item_id`, `hotspot_id` use lowercase snake_case.
+  - Scene keys follow `scene_<room_id>` (example: `scene_radio_room_v2`).
+- Recommended paths:
+  - `public/scenes/<room_id>.png`
+  - `public/objects/<object_id>.png`
+- Avoid renaming shipped IDs or asset keys, because telemetry joins and replay/debug traces depend on stable identifiers.
+
+## Inventory & Knowledge Journal (experimental — gameplay v2)
+
+> **experimental — gameplay v2:** Additive UI for room-based sessions only.
 
 ### Minimal Required Behaviors
 
@@ -121,6 +131,14 @@ To extend interaction safely:
 - Arrow keys move active option in the item list.
 - `Enter` selects the active item.
 - `Escape` closes modal and restores focus to opener.
+- Interactive scene objects should be keyboard focusable (`tabIndex=0`) and activatable with `Enter`/`Space`.
+- Focus outlines must remain visible for hotspots and object buttons.
+
+### Pointer and Touch Accessibility
+
+- Hotspots should expose a minimum tappable target near 44x44 CSS pixels.
+- Preserve equivalent behavior for mouse, touch, and keyboard activation.
+- Avoid hover-only affordances for required interactions.
 
 ### ARIA Semantics
 
@@ -129,7 +147,7 @@ To extend interaction safely:
 - Journal section headings use semantic heading levels.
 - Modal root uses `role="dialog"` and `aria-modal="true"`.
 
-## Dialogue & Typewriter Overlay (experimental - gameplay v2)
+## Dialogue & Typewriter Overlay (experimental — gameplay v2)
 
 ### Required Semantics
 
@@ -138,7 +156,7 @@ To extend interaction safely:
 - Skip must fast-forward animation only; it must not drop queued dialogue messages.
 - Queue behavior must be deterministic: FIFO based on backend order.
 
-## UI-local vs Server-canonical State (experimental - gameplay v2)
+## UI-local vs Server-canonical State (experimental — gameplay v2)
 
 ### UI-local state (allowed)
 
@@ -159,13 +177,13 @@ Example:
 - Highlighting an object on click is allowed immediately.
 - Changing a lock icon to unlocked is allowed only after an `unlock` effect is returned.
 
-## Optimistic UI Policy (experimental - gameplay v2)
+## Optimistic UI Policy (experimental — gameplay v2)
 
 - Do not optimistically mutate canonical gameplay state.
 - Allowed optimistic behavior is limited to micro-animations and temporary visual feedback.
 - If an action fails, UI should clear temporary animation state and render the canonical server response.
 
-## Telemetry Guidance (experimental - gameplay v2)
+## Telemetry Guidance (experimental — gameplay v2)
 
 - Use `game_action` for action telemetry.
 - Keep `puzzle_interaction_trace` for Phase-3 puzzle interaction trace telemetry.
@@ -194,9 +212,8 @@ const telemetryEvent = {
     timestamp: new Date().toISOString(),
     resulting_effects: [
       { type: "unlock", target_id: "old_radio" },
-      { type: "open_puzzle", puzzle_id: "listening_radio_01" }
-    ]
-  }
+      { type: "open_puzzle", puzzle_id: "listening_radio_01" },
+    ],
+  },
 };
 ```
-
