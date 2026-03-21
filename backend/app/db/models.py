@@ -19,9 +19,10 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    inspect,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from .database import Base
 
@@ -90,6 +91,9 @@ class GameSession(Base):
     condition: Mapped[str] = mapped_column(
         String(16), nullable=False, default="adaptive"
     )
+    mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="phase3"
+    )
     current_level_index: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=0
     )
@@ -121,6 +125,17 @@ class GameSession(Base):
     __table_args__ = (
         Index("ix_game_sessions_player_status", "player_id", "status"),
     )
+
+    @validates("mode")
+    def _validate_mode_immutable(self, key: str, value: str) -> str:
+        allowed = {"phase3", "gameplay_v2"}
+        if value not in allowed:
+            raise ValueError("mode must be one of: phase3, gameplay_v2")
+
+        state = inspect(self)
+        if state.persistent and state.attrs.mode.value is not None and state.attrs.mode.value != value:
+            raise ValueError("session.mode is immutable")
+        return value
 
 
 # ──────────────────────────────────────
@@ -269,6 +284,9 @@ class GameState(Base):
     hints_remaining: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=5
     )
+    game_state_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -300,4 +318,42 @@ class EventLog(Base):
         Index("ix_event_log_session", "session_id"),
         Index("ix_event_log_type", "event_type"),
         Index("ix_event_log_created", "created_at"),
+    )
+
+
+# ──────────────────────────────────────
+# 10. room_templates (gameplay v2 seed content)
+# ──────────────────────────────────────
+class RoomTemplate(Base):
+    __tablename__ = "room_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    room_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ──────────────────────────────────────
+# 11. action_dedupe (gameplay v2 idempotency)
+# ──────────────────────────────────────
+class ActionDedupe(Base):
+    __tablename__ = "action_dedupe"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("game_sessions.id"), nullable=False
+    )
+    client_action_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    response_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "client_action_id", name="uq_action_dedupe_session_client"),
+        Index("ix_action_dedupe_session", "session_id"),
     )

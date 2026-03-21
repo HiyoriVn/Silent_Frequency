@@ -24,7 +24,10 @@ from ..db.models import (
 
 
 async def create_session(
-    db: AsyncSession, display_name: str, condition: str = "adaptive"
+    db: AsyncSession,
+    display_name: str,
+    condition: str = "adaptive",
+    mode: str = "phase3",
 ) -> dict:
     """
     Create a new player + game session + initial BKT estimates + game state.
@@ -43,8 +46,9 @@ async def create_session(
     session = GameSession(
         player_id=player.id,
         condition=condition,
+        mode=mode,
         current_level_index=0,
-        current_room="start_room",
+        current_room="lab1" if mode == "gameplay_v2" else "start_room",
     )
     db.add(session)
     await db.flush()
@@ -78,6 +82,7 @@ async def create_session(
             "display_name": display_name,
             "map_id": session.map_id,
             "condition": session.condition,
+            "mode": session.mode,
             "current_level_index": session.current_level_index,
         },
     ))
@@ -89,6 +94,7 @@ async def create_session(
         "player_id": player.id,
         "session_token": player.session_token,
         "condition": session.condition,
+        "mode": session.mode,
         "current_level_index": session.current_level_index,
         "mastery": mastery,
         "current_room": session.current_room,

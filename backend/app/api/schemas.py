@@ -33,7 +33,7 @@ class ApiResponse(BaseModel):
     ok: bool = True
     data: Any = None
     error: ApiError | None = None
-    meta: ApiMeta | None = None
+    meta: Any = None
 
 
 # ──────────────────────────────────────
@@ -43,6 +43,7 @@ class ApiResponse(BaseModel):
 class CreateSessionRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=64)
     condition: Literal["adaptive", "static"] = "adaptive"
+    mode: Literal["phase3", "gameplay_v2"] = "phase3"
 
 
 class MasterySnapshot(BaseModel):
@@ -56,9 +57,83 @@ class SessionCreated(BaseModel):
     player_id: uuid.UUID
     session_token: str
     condition: Literal["adaptive", "static"]
+    mode: Literal["phase3", "gameplay_v2"]
     current_level_index: int
     mastery: MasterySnapshot
     current_room: str
+
+
+# ──────────────────────────────────────
+# Gameplay v2 schema (experimental)
+# ──────────────────────────────────────
+
+class GameStateObject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    type: str
+    state: str
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class GameStateInventoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    category: str
+    consumed: bool = False
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class HintPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idle_seconds: int | None = Field(default=None, ge=0)
+    failed_attempts_threshold: int | None = Field(default=None, ge=0)
+
+
+class GameStateSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_schema_version: Literal[2] = 2
+    session_id: uuid.UUID
+    game_state_version: int = Field(ge=0)
+    updated_at: datetime
+    room_id: str
+    room_state: list[GameStateObject] = Field(default_factory=list)
+    inventory: list[GameStateInventoryItem] = Field(default_factory=list)
+    active_puzzles: list[str] = Field(default_factory=list)
+    hint_policy: HintPolicy | None = None
+
+
+class ActionEffect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["add_item", "unlock", "show_dialogue", "open_puzzle"]
+    target_id: str | None = None
+    item_id: str | None = None
+    puzzle_id: str | None = None
+    dialogue_id: str | None = None
+
+
+class ActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interaction_schema_version: int
+    action: Literal["use_item", "inspect", "take_item", "open_object"]
+    target_id: str = Field(min_length=1)
+    item_id: str | None = None
+    client_action_id: uuid.UUID | None = None
+    client_ts: str | int | None = None
+    game_state_version: int | None = Field(default=None, ge=0)
+
+
+class ActionResponseData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    effects: list[ActionEffect] = Field(default_factory=list)
+    game_state: GameStateSnapshot
 
 
 # ──────────────────────────────────────

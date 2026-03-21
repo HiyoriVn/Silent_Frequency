@@ -1,0 +1,6 @@
+{
+  "interaction_schema_version": 2,
+  "action": "use_item",
+  "target_id": "old_radio",
+  "item_id": "bent_key"
+}

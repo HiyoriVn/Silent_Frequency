@@ -170,6 +170,12 @@ Gameplay v2 introduces a declarative action/effects layer so the project can sup
 - Declarative `effects[]` in action responses.
 - Coexistence with `POST /api/sessions/{session_id}/attempts` for learning puzzles.
 
+Mode and admin gating:
+
+- `session.mode` is immutable and must be set at `POST /api/sessions` creation time.
+- v2 routes must return `403 MODE_MISMATCH` when `session.mode != gameplay_v2`.
+- v2 routes must return `403 MODE_DISABLED` when `GAMEPLAY_V2_ENABLED=false`.
+
 ### Forbidden Features
 
 - Client-side scripting interpreters or executable effect scripts.
@@ -192,7 +198,30 @@ Gameplay v2 introduces a declarative action/effects layer so the project can sup
   "action": "use_item",
   "target_id": "drawer_lock",
   "item_id": "bent_key",
-  "client_action_id": "9fffbab3-62df-4fe7-aa9b-76e7fbede2df"
+  "client_action_id": "9fffbab3-62df-4fe7-aa9b-76e7fbede2df",
+  "game_state_version": 4
+}
+```
+
+### Game-state Snapshot Example
+
+```json
+{
+  "ok": true,
+  "data": {
+    "game_state": {
+      "interaction_schema_version": 2,
+      "session_id": "4dc9c5f2-8fdb-45f2-9f31-0a6b4f87a111",
+      "game_state_version": 4,
+      "updated_at": "2026-03-21T10:30:00Z",
+      "room_id": "lab1",
+      "room_state": [],
+      "inventory": [],
+      "active_puzzles": []
+    }
+  },
+  "error": null,
+  "meta": { "interaction_schema_version": 2 }
 }
 ```
 
@@ -218,4 +247,7 @@ Gameplay v2 introduces a declarative action/effects layer so the project can sup
 
 For unstable networks, clients should send optional `client_action_id` (UUID). Server-side dedupe should be scoped per session and action id. Recommended behavior: return the original `200` response for duplicates; if replay safety cannot be guaranteed, return `409` with a machine-readable explanation.
 
+### game_state_version Conflict Semantics
 
+- If request `game_state_version` does not match server state, return `409` with `error.code="STATE_MISMATCH"`.
+- Include latest `game_state_version` in `meta` and include canonical snapshot in `data_snapshot` for frontend reconciliation.

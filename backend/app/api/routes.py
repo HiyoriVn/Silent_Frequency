@@ -11,10 +11,12 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
-from ..services import session_service, mastery_service, puzzle_service
+from ..services import session_service, mastery_service, puzzle_service, game_service
 from .schemas import (
     ApiResponse,
     ApiMeta,
@@ -27,6 +29,7 @@ from .schemas import (
     NextPuzzleResponse,
     SubmitAttemptRequest,
     AttemptFeedback,
+    ActionRequest,
 )
 
 router = APIRouter(prefix="/api")
@@ -59,7 +62,10 @@ async def create_session(
 ):
     """Create a new player + game session with initialised BKT state."""
     data = await session_service.create_session(
-        db, body.display_name, body.condition
+        db,
+        body.display_name,
+        body.condition,
+        body.mode,
     )
 
     return ApiResponse(
@@ -69,6 +75,7 @@ async def create_session(
             player_id=data["player_id"],
             session_token=data["session_token"],
             condition=data["condition"],
+            mode=data["mode"],
             current_level_index=data["current_level_index"],
             mastery=MasterySnapshot(**data["mastery"]),
             current_room=data["current_room"],
@@ -177,3 +184,56 @@ async def submit_attempt(
         ),
         meta=_meta(session_id),
     )
+
+
+@router.get("/sessions/{session_id}/game-state", response_model=ApiResponse)
+async def get_game_state(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Gameplay v2: fetch canonical room/object/inventory snapshot."""
+    try:
+        snapshot = await game_service.get_game_state(db, session_id)
+    except game_service.GameplayServiceError as exc:
+        body = {
+            "ok": False,
+            "data": None,
+            "error": {"code": exc.code, "message": exc.message},
+            "meta": {"interaction_schema_version": 2},
+        }
+        return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(body))
+
+    return ApiResponse(
+        ok=True,
+        data={"game_state": snapshot},
+        error=None,
+        meta={"interaction_schema_version": 2},
+    )
+
+
+@router.post("/sessions/{session_id}/action", response_model=ApiResponse)
+async def post_action(
+    session_id: uuid.UUID,
+    body: ActionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Gameplay v2: apply a declarative action to canonical state."""
+    try:
+        result = await game_service.apply_action(
+            db,
+            session_id,
+            body.model_dump(),
+        )
+    except game_service.GameplayServiceError as exc:
+        payload = {
+            "ok": False,
+            "data": None,
+            "error": {"code": exc.code, "message": exc.message},
+            "meta": {"interaction_schema_version": 2},
+        }
+        if exc.status_code == 409:
+            payload["meta"] = exc.extra.get("meta", payload["meta"])
+            payload["data_snapshot"] = exc.extra.get("data_snapshot")
+        return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(payload))
+
+    return JSONResponse(status_code=200, content=jsonable_encoder(result))

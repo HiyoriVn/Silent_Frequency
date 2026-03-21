@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 
 from backend.app.db.database import engine, async_session_factory, Base
-from backend.app.db.models import Skill, Puzzle, PuzzleVariant
+from backend.app.db.models import Skill, Puzzle, PuzzleVariant, RoomTemplate
 
 
 # ──────────────────────────────────────
@@ -30,6 +30,7 @@ REQUIRED_TIERS = ("low", "mid", "high")
 ALLOWED_SKILLS = {"vocabulary", "grammar", "listening"}
 ALLOWED_ROOMS = {"start_room", "radio_room", "lab_room"}
 _CONTENT_DIR = Path(__file__).resolve().parent / "content" / "puzzles"
+_ROOM_CONTENT_DIR = Path(__file__).resolve().parent / "content" / "rooms"
 
 
 def _load_puzzle_docs() -> list[dict[str, Any]]:
@@ -45,6 +46,20 @@ def _load_puzzle_docs() -> list[dict[str, Any]]:
 
     if not docs:
         raise ValueError(f"No puzzle JSON files found in {_CONTENT_DIR}")
+
+    return docs
+
+
+def _load_room_docs() -> list[dict[str, Any]]:
+    if not _ROOM_CONTENT_DIR.exists():
+        return []
+
+    docs: list[dict[str, Any]] = []
+    for path in sorted(_ROOM_CONTENT_DIR.glob("*.json")):
+        with path.open("r", encoding="utf-8") as f:
+            doc = json.load(f)
+        doc["__source_file"] = path.name
+        docs.append(doc)
 
     return docs
 
@@ -428,7 +443,103 @@ def _build_seed_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return puzzles, variants
 
 
+def _validate_room_doc(
+    doc: dict[str, Any], *, valid_puzzle_ids: set[str]
+) -> None:
+    source = doc.get("__source_file", "<unknown>")
+    required = {
+        "interaction_schema_version",
+        "room_id",
+        "background_asset_key",
+        "objects",
+        "items",
+        "effects",
+    }
+    missing = required - set(doc.keys())
+    if missing:
+        raise ValueError(f"{source}: missing required room keys: {sorted(missing)}")
+
+    if doc["interaction_schema_version"] != 2:
+        raise ValueError(f"{source}: interaction_schema_version must be 2")
+
+    if not isinstance(doc["room_id"], str) or not doc["room_id"].strip():
+        raise ValueError(f"{source}: room_id must be a non-empty string")
+
+    objects = doc["objects"]
+    items = doc["items"]
+    effects = doc["effects"]
+
+    if not isinstance(objects, list) or not objects:
+        raise ValueError(f"{source}: objects must be a non-empty list")
+    if not isinstance(items, dict):
+        raise ValueError(f"{source}: items must be an object")
+    if not isinstance(effects, dict):
+        raise ValueError(f"{source}: effects must be an object")
+
+    object_ids: set[str] = set()
+    for obj in objects:
+        if not isinstance(obj, dict):
+            raise ValueError(f"{source}: each object must be an object")
+        for key in ("id", "type", "state", "properties"):
+            if key not in obj:
+                raise ValueError(f"{source}: object missing key '{key}'")
+        oid = obj["id"]
+        if oid in object_ids:
+            raise ValueError(f"{source}: duplicate object id '{oid}'")
+        object_ids.add(oid)
+
+    item_ids = set(items.keys())
+    for iid, item in items.items():
+        if not isinstance(item, dict):
+            raise ValueError(f"{source}: item '{iid}' must be an object")
+        for key in ("id", "display_name", "category"):
+            if key not in item:
+                raise ValueError(f"{source}: item '{iid}' missing key '{key}'")
+
+    for action_key, effect_list in effects.items():
+        if not isinstance(effect_list, list):
+            raise ValueError(f"{source}: effects['{action_key}'] must be a list")
+        for effect in effect_list:
+            if not isinstance(effect, dict) or "type" not in effect:
+                raise ValueError(f"{source}: effect in '{action_key}' must include type")
+            effect_type = effect["type"]
+            if effect_type in {"unlock", "show_dialogue"} and "target_id" in effect:
+                if effect["target_id"] not in object_ids and effect["target_id"] not in item_ids:
+                    raise ValueError(
+                        f"{source}: effect target_id '{effect['target_id']}' not found"
+                    )
+            if effect_type == "add_item":
+                iid = effect.get("item_id")
+                if iid not in item_ids:
+                    raise ValueError(f"{source}: add_item references unknown item_id '{iid}'")
+            if effect_type == "open_puzzle":
+                pid = effect.get("puzzle_id")
+                if pid not in valid_puzzle_ids:
+                    raise ValueError(
+                        f"{source}: open_puzzle references unknown puzzle_id '{pid}'"
+                    )
+
+
+def _build_room_payload(valid_puzzle_ids: set[str]) -> list[dict[str, Any]]:
+    room_docs = _load_room_docs()
+    payloads: list[dict[str, Any]] = []
+
+    for doc in room_docs:
+        _validate_room_doc(doc, valid_puzzle_ids=valid_puzzle_ids)
+        payloads.append(
+            {
+                "room_id": doc["room_id"],
+                "payload": {
+                    k: v for k, v in doc.items() if k != "__source_file"
+                },
+            }
+        )
+
+    return payloads
+
+
 PUZZLES, VARIANTS = _build_seed_payload()
+ROOM_TEMPLATES = _build_room_payload({p["id"] for p in PUZZLES})
 
 
 async def _seed_skills() -> tuple[int, int]:
@@ -523,6 +634,34 @@ async def _seed_puzzles_and_variants() -> tuple[int, int, int, int]:
     return puzzle_inserted, puzzle_updated, variant_inserted, variant_updated
 
 
+async def _seed_room_templates() -> tuple[int, int]:
+    inserted = 0
+    updated = 0
+
+    if not ROOM_TEMPLATES:
+        return inserted, updated
+
+    async with async_session_factory() as db:
+        existing_result = await db.execute(select(RoomTemplate))
+        existing_by_room = {
+            row.room_id: row for row in existing_result.scalars().all()
+        }
+
+        for payload in ROOM_TEMPLATES:
+            existing = existing_by_room.get(payload["room_id"])
+            if existing is None:
+                db.add(RoomTemplate(**payload))
+                inserted += 1
+                continue
+
+            existing.payload = payload["payload"]
+            updated += 1
+
+        await db.commit()
+
+    return inserted, updated
+
+
 # ──────────────────────────────────────
 # Seed runner
 # ──────────────────────────────────────
@@ -539,12 +678,14 @@ async def seed() -> None:
         variant_inserted,
         variant_updated,
     ) = await _seed_puzzles_and_variants()
+    room_inserted, room_updated = await _seed_room_templates()
 
     print(
         "Seed complete: "
         f"skills inserted={skill_inserted}, updated={skill_updated}; "
         f"puzzles inserted={puzzle_inserted}, updated={puzzle_updated}; "
-        f"variants inserted={variant_inserted}, updated={variant_updated}."
+        f"variants inserted={variant_inserted}, updated={variant_updated}; "
+        f"rooms inserted={room_inserted}, updated={room_updated}."
     )
 
     await engine.dispose()

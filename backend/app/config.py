@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     app_title: str = "Silent Frequency API"
     app_version: str = "0.1.0"
     debug: bool = True
+    gameplay_v2_enabled: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
