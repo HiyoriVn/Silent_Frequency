@@ -82,6 +82,28 @@
 - Gameplay v2 enables true escape-room interactions while keeping learning validity and backend authority.
 - Every gameplay contract change MUST be versioned using `interaction_schema_version`.
 
+<!-- CHANGELOG: updated 2026-03-21: enforce immutable session.mode, add feature flag and telemetry note -->
+
+### (experimental — gameplay v2) — Session mode and feature gating
+
+- **Session mode (immutable):** `POST /api/sessions` accepts `mode` in `{"phase3","gameplay_v2"}` and stores it as `GameSession.mode`. **Mode is immutable for normal experimental sessions**; attempts to change `mode` for an existing session must be rejected by the server. This preserves experimental integrity for cohorts.
+
+- **Global feature flag / rollback:** Implement a global toggle (for example `FEATURE_GAMEPLAY_V2_ENABLED` environment variable or an admin switch). When the flag is OFF, v2 APIs should be refused (`403` / `MODE_MISMATCH`) regardless of `session.mode`. Document a short ops runbook: how to flip the flag and a graceful rollback (disable new v2 sessions and let existing pilot sessions finish or be marked inactive).
+
+- **Error envelope / mode mismatch:** For v2 endpoints called on non-v2 sessions or when the global flag is off, servers MUST return:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "MODE_MISMATCH",
+    "message": "Session mode is not gameplay_v2 or v2 is disabled"
+  }
+}
+```
+
+Telemetry minimality: `game_action` telemetry must include only minimal effect references (for example effect type and `target_id`). Do not log full canonical room snapshots in each `game_action` entry.
+
 ### Mode and Feature-Flag Enforcement
 
 - Session mode is immutable for an experiment run: `session.mode` is set at session creation and MUST NOT be changed mid-session.

@@ -344,3 +344,10 @@ Required analysis dimensions for v2 pilots:
 2. Enable for internal QA sessions only, collect telemetry and replay traces.
 3. Run a limited pilot cohort with explicit mode segmentation in dashboards.
 4. Promote only after conflict/idempotency/error-rate SLOs are stable and canonical Phase-3 metrics are unaffected.
+
+Additional short implications:
+
+- Increased testing burden: contract tests, seed validation, telemetry QA.
+- Risk of data contamination: enforce immutable `session.mode` and cohort separation.
+- Need operational gating (`FEATURE_GAMEPLAY_V2_ENABLED`) and a rollback playbook.
+- Recommendation: pilot small N (20-50) before broad rollout.

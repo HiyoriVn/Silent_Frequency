@@ -183,6 +183,34 @@ Example:
 - Allowed optimistic behavior is limited to micro-animations and temporary visual feedback.
 - If an action fails, UI should clear temporary animation state and render the canonical server response.
 
+Accessibility and UI rules (short):
+
+- Hotspot implementation:
+
+```html
+<button role="button" aria-label="Safe" tabindex="0">...</button>
+```
+
+Keyboard: `Enter` / `Space` triggers the same action as click. Focus styles must be present.
+
+- Modal: use `role="dialog"`, trap focus while open, return focus to invoking element on close.
+- Dialogue/typewriter: use `<div aria-live="polite">` for progressive lines and provide a `Skip` button labeled `Skip` for screen readers.
+
+Optimistic UI policy:
+
+- Do NOT modify canonical game state optimistically. Only allow micro-animations (visual feedback). Apply canonical changes only after server response.
+
+Inventory shape:
+
+```json
+{
+  "id": "k1",
+  "display_name": "Silver Key",
+  "category": "tool",
+  "consumed": false
+}
+```
+
 ## Telemetry Guidance (experimental — gameplay v2)
 
 - Use `game_action` for action telemetry.
