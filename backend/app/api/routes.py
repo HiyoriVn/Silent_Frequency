@@ -191,7 +191,11 @@ async def get_game_state(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Gameplay v2: fetch canonical room/object/inventory snapshot."""
+    """Gameplay v2: fetch canonical room/object/inventory snapshot.
+
+    Returns an ETag header (weak) based on `game_state_version`.
+    On 409 from POST /action, client should re-fetch or use returned snapshot.
+    """
     try:
         snapshot = await game_service.get_game_state(db, session_id)
     except game_service.GameplayServiceError as exc:
@@ -203,11 +207,20 @@ async def get_game_state(
         }
         return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(body))
 
-    return ApiResponse(
-        ok=True,
-        data={"game_state": snapshot},
-        error=None,
-        meta={"interaction_schema_version": 2},
+    version = snapshot.get("game_state_version", 0)
+    etag = f'W/"v{version}"'
+
+    return JSONResponse(
+        status_code=200,
+        content=jsonable_encoder(
+            ApiResponse(
+                ok=True,
+                data={"game_state": snapshot},
+                error=None,
+                meta={"interaction_schema_version": 2, "game_state_version": version},
+            )
+        ),
+        headers={"ETag": etag},
     )
 
 

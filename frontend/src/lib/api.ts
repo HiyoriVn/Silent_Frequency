@@ -14,6 +14,7 @@ import type {
   SubmitAttemptRequest,
   ActionResponseData,
   GameStateSnapshot,
+  InteractionTrace,
 } from "./types";
 
 type ActionRequestPayload = {
@@ -24,6 +25,7 @@ type ActionRequestPayload = {
   client_action_id?: string;
   client_ts?: string | number;
   game_state_version?: number;
+  interaction_trace?: InteractionTrace;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -43,7 +45,10 @@ async function request<T>(
   const json = await res.json();
 
   // If the server returned a non-2xx but the body is the envelope, just return it.
-  if (!res.ok && json?.ok === false) return json as ApiResponse<T>;
+  // Preserve HTTP status so callers can detect 409 specifically.
+  if (!res.ok && json?.ok === false) {
+    return { ...json, _http_status: res.status } as ApiResponse<T>;
+  }
 
   // Unexpected error (network, etc.)
   if (!res.ok) {
@@ -52,6 +57,7 @@ async function request<T>(
       data: null,
       error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` },
       meta: null,
+      _http_status: res.status,
     };
   }
 

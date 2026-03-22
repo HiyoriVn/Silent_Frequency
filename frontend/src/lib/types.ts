@@ -23,6 +23,8 @@ export interface ApiResponse<T = unknown> {
   data: T | null;
   error: ApiError | null;
   meta: ApiMeta | null;
+  /** Populated by api.ts for non-2xx responses; undefined for 2xx. */
+  _http_status?: number;
 }
 
 // ── POST /api/sessions ──────────────────────────────────
@@ -150,7 +152,17 @@ export interface InteractionTraceEvent {
     | "hint_opened";
   hotspot_id?: string;
   prompt_ref?: string;
+  hint_id?: string;
   elapsed_ms: number;
+}
+
+export interface InteractionTrace {
+  version?: number;
+  type?: "interaction_trace";
+  puzzle_id?: string;
+  variant_id?: string;
+  trace: InteractionTraceEvent[];
+  response_time_ms?: number;
 }
 
 // ── Gameplay v2 interaction schema ─────────────────────
@@ -219,6 +231,7 @@ export interface InteractionPayload {
   client_action_id?: string;
   client_ts?: string | number;
   game_state_version?: number;
+  interaction_trace?: InteractionTrace;
 }
 
 export interface ActionResponseData {

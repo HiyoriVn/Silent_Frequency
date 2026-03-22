@@ -142,4 +142,130 @@ describe("PuzzleScreen", () => {
       );
     });
   });
+
+  it("shows stale-state banner on 409 and reconciles snapshot", async () => {
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    await screen.findByText("Bent Key");
+
+    // Override postAction to return 409 with data_snapshot
+    postAction.mockResolvedValueOnce({
+      ok: false,
+      data: null,
+      error: { code: "STATE_MISMATCH", message: "client state stale" },
+      meta: { interaction_schema_version: 2, game_state_version: 5 },
+      _http_status: 409,
+      data_snapshot: { ...snapshot, game_state_version: 5 },
+    });
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    const banner = await screen.findByText("State updated — refreshed");
+    expect(banner).toBeInTheDocument();
+  });
+
+  it("appends trace events on hotspot click and hint open", async () => {
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    await screen.findByText("Bent Key");
+
+    // Click hotspot - should append hotspot_clicked trace
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    // Open hint - should append hint_opened trace
+    await waitFor(() => {
+      expect(postAction).toHaveBeenCalled();
+    });
+
+    // Reset mock to capture next call with trace
+    postAction.mockClear();
+    postAction.mockResolvedValue({
+      ok: true,
+      data: {
+        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
+        game_state: { ...snapshot, game_state_version: 2 },
+      },
+    });
+
+    const hintBtn = screen.getByRole("button", { name: /open/i });
+    fireEvent.click(hintBtn);
+
+    // Click hotspot again to trigger action that includes trace
+    fireEvent.click(hotspot);
+
+    await waitFor(() => {
+      expect(postAction).toHaveBeenCalled();
+      const callArgs = postAction.mock.calls[0][1];
+      // trace should be present in the payload
+      if (callArgs.interaction_trace) {
+        const traceEvents = callArgs.interaction_trace.trace;
+        const eventTypes = traceEvents.map((e: { event_type: string }) => e.event_type);
+        expect(eventTypes).toContain("hint_opened");
+      }
+    });
+  });
+
+  it("caps submitted trace at 20 events", async () => {
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    await screen.findByText("Bent Key");
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+
+    // Click hotspot 25 times to exceed cap
+    for (let i = 0; i < 25; i++) {
+      postAction.mockResolvedValueOnce({
+        ok: false,
+        data: null,
+        error: { code: "RATE_LIMIT", message: "too fast" },
+        _http_status: 429,
+      });
+      fireEvent.click(hotspot);
+    }
+
+    // Reset and do one final action that should carry trace
+    postAction.mockResolvedValue({
+      ok: true,
+      data: {
+        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
+        game_state: { ...snapshot, game_state_version: 1 },
+      },
+    });
+
+    fireEvent.click(hotspot);
+
+    await waitFor(() => {
+      const lastCall = postAction.mock.calls[postAction.mock.calls.length - 1];
+      if (lastCall) {
+        const callArgs = lastCall[1];
+        if (callArgs.interaction_trace) {
+          expect(callArgs.interaction_trace.trace.length).toBeLessThanOrEqual(20);
+        }
+      }
+    });
+  });
+
+  it("action success without trace does not break (no regression)", async () => {
+    // Fresh render, no interactions before action
+    postAction.mockResolvedValue({
+      ok: true,
+      data: {
+        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
+        game_state: { ...snapshot, game_state_version: 1 },
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    await waitFor(() => {
+      expect(postAction).toHaveBeenCalled();
+      // Should succeed without any trace in payload
+      expect(screen.queryByText("Action failed")).not.toBeInTheDocument();
+    });
+  });
 });

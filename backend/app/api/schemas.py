@@ -117,6 +117,18 @@ class ActionEffect(BaseModel):
     dialogue_id: str | None = None
 
 
+class InteractionTrace(BaseModel):
+    """Observational interaction trace sent with actions or attempts."""
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = 1
+    type: Literal["interaction_trace"] = "interaction_trace"
+    puzzle_id: str | None = None
+    variant_id: str | None = None
+    trace: list["InteractionTraceEvent"] = Field(default_factory=list)
+    response_time_ms: int = Field(default=0, ge=0)
+
+
 class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -127,6 +139,7 @@ class ActionRequest(BaseModel):
     client_action_id: uuid.UUID | None = None
     client_ts: str | int | None = None
     game_state_version: int | None = Field(default=None, ge=0)
+    interaction_trace: InteractionTrace | None = None
 
 
 class ActionResponseData(BaseModel):
@@ -264,9 +277,10 @@ class InteractionPayload(BaseModel):
 class InteractionTraceEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    event_type: Literal["hotspot_clicked", "prompt_opened", "prompt_closed"]
+    event_type: Literal["hotspot_clicked", "prompt_opened", "prompt_closed", "hint_opened"]
     hotspot_id: str | None = None
     prompt_ref: str | None = None
+    hint_id: str | None = None
     elapsed_ms: int = Field(..., ge=0)
 
 
