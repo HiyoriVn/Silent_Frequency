@@ -20,8 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db.models import ActionDedupe, EventLog, GameSession, GameState, RoomTemplate
+from .. import metrics
 
 logger = logging.getLogger(__name__)
+
+MAX_TRACE_EVENTS = 20
+MAX_TRACE_EVENT_BYTES = 10_000
 
 class GameplayServiceError(Exception):
     def __init__(
@@ -337,13 +341,45 @@ def _apply_effects(
 
 
 def _build_trace_payload(trace_data: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Trim interaction trace to first 20 events, add _truncated flag if needed."""
+    """Trim interaction trace and mark payload with _truncated when needed."""
     if trace_data is None:
         return None
 
     events = trace_data.get("trace") or []
-    truncated = len(events) > 20
-    trimmed_events = events[:20]
+    if not isinstance(events, list):
+        events = []
+
+    event_count_truncated = len(events) > MAX_TRACE_EVENTS
+    trimmed_events: list[dict[str, Any]] = []
+    oversized_event_trimmed = False
+
+    for event in events[:MAX_TRACE_EVENTS]:
+        if not isinstance(event, dict):
+            trimmed_events.append(
+                {"event_type": "unknown", "elapsed_ms": 0, "_oversized": True}
+            )
+            oversized_event_trimmed = True
+            continue
+
+        serialized = json.dumps(event)
+        if len(serialized) <= MAX_TRACE_EVENT_BYTES:
+            trimmed_events.append(event)
+            continue
+
+        oversized_event_trimmed = True
+        trimmed_events.append(
+            {
+                "event_type": event.get("event_type", "unknown"),
+                "elapsed_ms": event.get("elapsed_ms", 0),
+                "_oversized": True,
+            }
+        )
+
+    truncated = event_count_truncated or oversized_event_trimmed
+    if truncated:
+        metrics.increment("telemetry.trace.truncated")
+    if oversized_event_trimmed:
+        metrics.increment("telemetry.trace.too_large")
 
     payload: dict[str, Any] = {
         "version": trace_data.get("version", 1),
@@ -355,6 +391,14 @@ def _build_trace_payload(trace_data: dict[str, Any] | None) -> dict[str, Any] | 
     }
     if truncated:
         payload["_truncated"] = True
+
+    # Guard against a large full trace payload by further trimming events from the tail.
+    while len(json.dumps(payload)) > MAX_TRACE_EVENT_BYTES and payload["trace"]:
+        payload["trace"] = payload["trace"][:-1]
+        payload["_truncated"] = True
+        metrics.increment("telemetry.trace.too_large")
+        metrics.increment("telemetry.trace.truncated")
+
     return payload
 
 
@@ -462,6 +506,7 @@ async def apply_action(
                 payload=telemetry_payload,
             )
         )
+        metrics.increment("telemetry.game_action.count")
 
         # ── puzzle_interaction_trace observational logging ──
         raw_trace = payload.get("interaction_trace")

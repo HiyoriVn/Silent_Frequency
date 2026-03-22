@@ -251,3 +251,11 @@ For unstable networks, clients should send optional `client_action_id` (UUID). S
 
 - If request `game_state_version` does not match server state, return `409` with `error.code="STATE_MISMATCH"`.
 - Include latest `game_state_version` in `meta` and include canonical snapshot in `data_snapshot` for frontend reconciliation.
+
+### Telemetry and Trace Trimming (Batch 4.3)
+
+- `puzzle_interaction_trace` is observational telemetry only.
+- Server enforces trace caps (max 20 events, per-event serialized size guard).
+- Trimmed traces are marked with `_truncated: true` and tracked via truncation metrics.
+- `_http_status` fields in payloads are convenience-only; HTTP status/headers remain authoritative.
+- Full policy is documented in `docs/telemetry_logging.md`.
