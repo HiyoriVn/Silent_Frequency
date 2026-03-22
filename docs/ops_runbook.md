@@ -61,12 +61,13 @@ export PGDATABASE=silent_frequency
 ## Post-migration Checklist
 
 1. Run smoke tests for `GET /api/sessions/{id}/game-state` and `POST /api/sessions/{id}/action`.
-2. Verify event log growth for `game_action` and `puzzle_interaction_trace`.
+2. Verify event log growth for `game_action`, `puzzle_interaction_trace`, and `attempt_submitted`.
 3. Verify metrics counters:
    - `telemetry.game_action.count`
    - `telemetry.trace.truncated`
    - `telemetry.trace.too_large`
 4. Confirm no regression in `POST /api/sessions/{id}/attempts` flow.
+5. Confirm gameplay_v2 modal attempts include `metadata.source="gameplay_v2"` in attempt telemetry payload.
 
 ## action_dedupe Cleanup Job
 
@@ -112,3 +113,18 @@ Common mismatch causes:
 - expected route contract differs from implemented endpoint naming/shape
 - seed content IDs no longer align with test fixtures
 - level/slot assumptions in old tests diverge from current backend-owned flow
+
+## Batch 4.5 Integration QA Commands
+
+```bash
+python -m pytest -q \
+   backend/app/tests/test_attempt_from_gameplay_v2.py \
+   backend/app/tests/test_hint_count_and_trace_backend.py \
+   backend/app/tests/test_trace_trimming_metrics.py \
+   backend/app/tests/test_game_action_telemetry_exists.py
+
+cd frontend && npm run test -- \
+   tests/PuzzleScreen.409.test.tsx \
+   tests/HintPanel.test.tsx \
+   tests/Trace.cap.test.tsx
+```

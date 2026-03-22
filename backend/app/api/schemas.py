@@ -181,6 +181,9 @@ class NextPuzzleResponse(BaseModel):
     time_limit_sec: int | None = None
     interaction_mode: Literal["plain", "scene_hotspot"] = "plain"
     interaction: "InteractionPayload | None" = None
+    hints: list[str] = Field(default_factory=list)
+    max_hints_shown: int | None = None
+    max_attempt_chars: int | None = None
     session_complete: bool
 
 
@@ -189,14 +192,21 @@ class NextPuzzleResponse(BaseModel):
 # ──────────────────────────────────────
 
 class SubmitAttemptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     variant_id: str = Field(..., min_length=1)
     answer: str = Field(..., min_length=1)
     response_time_ms: int = Field(..., ge=0)
     hint_count_used: int = Field(0, ge=0)
-    interaction_trace: list["InteractionTraceEvent"] | None = Field(
-        default=None,
-        max_length=20,
-    )
+    interaction_trace: InteractionTrace | None = None
+    game_state_version: int | None = Field(default=None, ge=0)
+    metadata: AttemptMetadata | None = None
+
+
+class AttemptMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(..., min_length=1)
 
 
 class AttemptFeedback(BaseModel):

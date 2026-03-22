@@ -11,9 +11,26 @@ import type {
   MasterySnapshot,
   NextPuzzleResponse,
   AttemptFeedback,
+  InteractionTrace,
   InteractionTraceEvent,
 } from "@/lib/types";
 import * as api from "@/lib/api";
+
+function normalizeInteractionTrace(
+  input?: InteractionTrace | InteractionTraceEvent[] | null,
+): InteractionTrace | undefined {
+  if (!input) return undefined;
+  if (Array.isArray(input)) {
+    if (input.length === 0) return undefined;
+    return { version: 1, type: "interaction_trace", trace: input.slice(0, 20) };
+  }
+  return {
+    ...input,
+    version: 1,
+    type: "interaction_trace",
+    trace: input.trace.slice(0, 20),
+  };
+}
 
 // ── State shape ──────────────────────────────────────────
 
@@ -45,7 +62,7 @@ interface GameState {
   submitAnswer: (
     answer: string,
     hintCount?: number,
-    interactionTrace?: InteractionTraceEvent[],
+    interactionTrace?: InteractionTrace | InteractionTraceEvent[] | null,
   ) => Promise<void>;
   reset: () => void;
 }
@@ -129,15 +146,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const elapsed = startTime ? Math.round(performance.now() - startTime) : 0;
     set({ loading: true, error: null });
 
+    const normalizedTrace = normalizeInteractionTrace(interactionTrace);
+
     const res = await api.submitAttempt(sessionId, {
       variant_id: currentItem.variant_id,
       answer,
       response_time_ms: elapsed,
       hint_count_used: hintCount,
-      interaction_trace:
-        interactionTrace && interactionTrace.length > 0
-          ? interactionTrace
-          : undefined,
+      interaction_trace: normalizedTrace,
     });
 
     if (!res.ok || !res.data) {

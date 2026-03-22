@@ -83,9 +83,16 @@ Example payload:
   "is_correct": true,
   "response_time_ms": 3110,
   "hint_count_used": 0,
+  "metadata": { "source": "gameplay_v2" },
   "timestamp": "2026-03-22T08:05:00Z"
 }
 ```
+
+Rules:
+
+- For gameplay_v2 modal submissions, clients should send `metadata.source = "gameplay_v2"`.
+- Metadata is telemetry context only and must not alter scoring/BKT/progression.
+- Server-side QA should verify `metadata.source` coverage for gameplay_v2 attempt traffic.
 
 ## `_http_status` Convenience Field
 
@@ -107,3 +114,9 @@ The service emits lightweight counters for operations visibility:
 - `telemetry.trace.too_large`
 
 These counters are currently in-process stubs and can be wired to real metrics backends later.
+
+## Batch 4.5 QA Thresholds
+
+- `telemetry.trace.truncated` should stay below 5% of total interaction-trace events during pilot.
+- `telemetry.trace.too_large` should remain 0 during pilot.
+- `attempt_submitted` telemetry for gameplay_v2 should include `metadata.source="gameplay_v2"`.

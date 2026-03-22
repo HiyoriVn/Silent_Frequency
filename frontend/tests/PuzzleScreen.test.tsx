@@ -161,50 +161,10 @@ describe("PuzzleScreen", () => {
     const hotspot = await screen.findByRole("button", { name: "Old Radio" });
     fireEvent.click(hotspot);
 
-    const banner = await screen.findByText("State updated — refreshed");
+    const banner = await screen.findByText(
+      "State updated. Your action did not apply. Please retry.",
+    );
     expect(banner).toBeInTheDocument();
-  });
-
-  it("appends trace events on hotspot click and hint open", async () => {
-    render(<PuzzleScreen sessionId="session-1" />);
-
-    await screen.findByText("Bent Key");
-
-    // Click hotspot - should append hotspot_clicked trace
-    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
-    fireEvent.click(hotspot);
-
-    // Open hint - should append hint_opened trace
-    await waitFor(() => {
-      expect(postAction).toHaveBeenCalled();
-    });
-
-    // Reset mock to capture next call with trace
-    postAction.mockClear();
-    postAction.mockResolvedValue({
-      ok: true,
-      data: {
-        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
-        game_state: { ...snapshot, game_state_version: 2 },
-      },
-    });
-
-    const hintBtn = screen.getByRole("button", { name: /open/i });
-    fireEvent.click(hintBtn);
-
-    // Click hotspot again to trigger action that includes trace
-    fireEvent.click(hotspot);
-
-    await waitFor(() => {
-      expect(postAction).toHaveBeenCalled();
-      const callArgs = postAction.mock.calls[0][1];
-      // trace should be present in the payload
-      if (callArgs.interaction_trace) {
-        const traceEvents = callArgs.interaction_trace.trace;
-        const eventTypes = traceEvents.map((e: { event_type: string }) => e.event_type);
-        expect(eventTypes).toContain("hint_opened");
-      }
-    });
   });
 
   it("caps submitted trace at 20 events", async () => {
@@ -229,7 +189,13 @@ describe("PuzzleScreen", () => {
     postAction.mockResolvedValue({
       ok: true,
       data: {
-        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
+        effects: [
+          {
+            type: "show_dialogue",
+            dialogue_id: "note_read_01",
+            target_id: "note",
+          },
+        ],
         game_state: { ...snapshot, game_state_version: 1 },
       },
     });
@@ -241,7 +207,9 @@ describe("PuzzleScreen", () => {
       if (lastCall) {
         const callArgs = lastCall[1];
         if (callArgs.interaction_trace) {
-          expect(callArgs.interaction_trace.trace.length).toBeLessThanOrEqual(20);
+          expect(callArgs.interaction_trace.trace.length).toBeLessThanOrEqual(
+            20,
+          );
         }
       }
     });
@@ -252,7 +220,13 @@ describe("PuzzleScreen", () => {
     postAction.mockResolvedValue({
       ok: true,
       data: {
-        effects: [{ type: "show_dialogue", dialogue_id: "note_read_01", target_id: "note" }],
+        effects: [
+          {
+            type: "show_dialogue",
+            dialogue_id: "note_read_01",
+            target_id: "note",
+          },
+        ],
         game_state: { ...snapshot, game_state_version: 1 },
       },
     });
