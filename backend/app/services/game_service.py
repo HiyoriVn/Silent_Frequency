@@ -1,11 +1,13 @@
 """
 Silent Frequency — Gameplay v2 Service
 
-Backend-owned room action stubs for Batch 4.0.
+Backend-owned room action stubs for Batch 4.0+.
 This module is additive and does not alter Phase-3 scoring/progression flows.
 """
 
 from __future__ import annotations
+
+import logging
 
 import json
 import uuid
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..db.models import ActionDedupe, EventLog, GameSession, GameState, RoomTemplate
 
+logger = logging.getLogger(__name__)
 
 class GameplayServiceError(Exception):
     def __init__(
@@ -333,6 +336,28 @@ def _apply_effects(
     state.inventory = inventory
 
 
+def _build_trace_payload(trace_data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Trim interaction trace to first 20 events, add _truncated flag if needed."""
+    if trace_data is None:
+        return None
+
+    events = trace_data.get("trace") or []
+    truncated = len(events) > 20
+    trimmed_events = events[:20]
+
+    payload: dict[str, Any] = {
+        "version": trace_data.get("version", 1),
+        "type": "interaction_trace",
+        "puzzle_id": trace_data.get("puzzle_id"),
+        "variant_id": trace_data.get("variant_id"),
+        "trace": trimmed_events,
+        "response_time_ms": trace_data.get("response_time_ms", 0),
+    }
+    if truncated:
+        payload["_truncated"] = True
+    return payload
+
+
 async def apply_action(
     db: AsyncSession,
     session_id: uuid.UUID,
@@ -408,8 +433,10 @@ async def apply_action(
         }
         encoded_response_payload = jsonable_encoder(response_payload)
 
-        telemetry_payload = {
+        # ── game_action telemetry ──
+        telemetry_payload: dict[str, Any] = {
             "version": 1,
+            "type": "game_action",
             "session_id": str(session_id),
             "action": payload["action"],
             "target_id": payload["target_id"],
@@ -419,7 +446,13 @@ async def apply_action(
             "resulting_effects": _minimal_effects_for_telemetry(effects),
         }
 
-        if len(json.dumps(telemetry_payload)) > 10_000:
+        serialized_size = len(json.dumps(telemetry_payload))
+        if serialized_size > 10_000:
+            logger.warning(
+                "game_action telemetry payload exceeds 10KB (%d bytes), trimming effects for session %s",
+                serialized_size,
+                session_id,
+            )
             telemetry_payload["resulting_effects"] = telemetry_payload["resulting_effects"][:10]
 
         db.add(
@@ -429,6 +462,28 @@ async def apply_action(
                 payload=telemetry_payload,
             )
         )
+
+        # ── puzzle_interaction_trace observational logging ──
+        raw_trace = payload.get("interaction_trace")
+        if raw_trace is not None:
+            trace_payload = _build_trace_payload(raw_trace)
+            if trace_payload is not None:
+                trace_serialized = json.dumps(trace_payload)
+                if len(trace_serialized) > 10_000:
+                    logger.warning(
+                        "puzzle_interaction_trace payload exceeds 10KB (%d bytes) for session %s, trimming trace",
+                        len(trace_serialized),
+                        session_id,
+                    )
+                    trace_payload["trace"] = trace_payload["trace"][:10]
+                    trace_payload["_truncated"] = True
+                db.add(
+                    EventLog(
+                        session_id=session_id,
+                        event_type="puzzle_interaction_trace",
+                        payload=trace_payload,
+                    )
+                )
 
         if client_action_id is not None:
             db.add(

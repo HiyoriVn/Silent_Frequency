@@ -91,7 +91,10 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
   const [hintOpen, setHintOpen] = React.useState(false);
   const [modal, setModal] = React.useState<ActivePuzzleModal | null>(null);
   const [attemptAnswer, setAttemptAnswer] = React.useState("");
+  const [staleBanner, setStaleBanner] = React.useState(false);
   const traceStartRef = React.useRef<number>(0);
+
+  const MAX_TRACE_EVENTS = 20;
 
   const appendTrace = React.useCallback(
     (event: Omit<InteractionTraceEvent, "elapsed_ms">) => {
@@ -100,7 +103,10 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         traceStartRef.current = now;
       }
       const elapsed = Math.max(0, Math.round(now - traceStartRef.current));
-      setTrace((prev) => [...prev, { ...event, elapsed_ms: elapsed }]);
+      setTrace((prev) => {
+        if (prev.length >= MAX_TRACE_EVENTS) return prev;
+        return [...prev, { ...event, elapsed_ms: elapsed }];
+      });
     },
     [],
   );
@@ -157,6 +163,9 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
 
       setLoading(true);
       setError(null);
+      setStaleBanner(false);
+
+      const currentTrace = trace.slice(0, MAX_TRACE_EVENTS);
 
       const response = await postAction(sessionId, {
         interaction_schema_version: 2,
@@ -164,7 +173,30 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         target_id: payload.target_id,
         item_id: payload.item_id,
         game_state_version: snapshot.game_state_version,
+        ...(currentTrace.length > 0
+          ? {
+              interaction_trace: {
+                version: 1,
+                type: "interaction_trace" as const,
+                trace: currentTrace,
+              },
+            }
+          : {}),
       });
+
+      // Handle 409 stale-state: reconcile from snapshot, show banner, let user retry manually.
+      if (response._http_status === 409) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const snap = (response as Record<string, any>).data_snapshot;
+        if (snap) {
+          setSnapshot(snap);
+        } else {
+          await refreshSnapshot();
+        }
+        setStaleBanner(true);
+        setLoading(false);
+        return;
+      }
 
       if (!response.ok || !response.data) {
         setError(response.error?.message ?? "Action failed");
@@ -175,10 +207,12 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       const orderedEffects = response.data.effects ?? [];
       setEffects(orderedEffects);
       setSnapshot(response.data.game_state);
+      setTrace([]);
+      traceStartRef.current = 0;
       setLoading(false);
       await maybeOpenPuzzleModal(orderedEffects);
     },
-    [maybeOpenPuzzleModal, sessionId, snapshot],
+    [maybeOpenPuzzleModal, refreshSnapshot, sessionId, snapshot, trace],
   );
 
   const handleHotspotClicked = async (hotspot: SceneHotspot) => {
@@ -252,6 +286,18 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
           <p className="mb-3 text-sm text-neutral-500">Syncing state...</p>
         )}
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {staleBanner && (
+          <div className="mb-3 flex items-center justify-between rounded-md border border-amber-600/40 bg-amber-900/20 px-3 py-2 text-sm text-amber-300">
+            <span>State updated — refreshed</span>
+            <button
+              type="button"
+              onClick={() => setStaleBanner(false)}
+              className="ml-2 text-xs text-amber-500 hover:text-amber-200"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {snapshot && (
           <SceneRenderer
