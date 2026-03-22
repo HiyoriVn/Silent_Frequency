@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import AnswerPanel from "@/components/AnswerPanel";
+import HintPanel from "@/components/HintPanel";
 import InventoryPanel from "@/components/InventoryPanel";
 import SceneRenderer from "@/components/SceneRenderer";
 import {
@@ -88,13 +90,24 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     null,
   );
   const [trace, setTrace] = React.useState<InteractionTraceEvent[]>([]);
-  const [hintOpen, setHintOpen] = React.useState(false);
+  const [traceTruncatedClient, setTraceTruncatedClient] = React.useState(false);
+  const [hintCountUsed, setHintCountUsed] = React.useState(0);
   const [modal, setModal] = React.useState<ActivePuzzleModal | null>(null);
+  const [attemptKey, setAttemptKey] = React.useState("attempt-0");
   const [attemptAnswer, setAttemptAnswer] = React.useState("");
   const [staleBanner, setStaleBanner] = React.useState(false);
+  const retryHandlerRef = React.useRef<(() => void) | null>(null);
   const traceStartRef = React.useRef<number>(0);
 
   const MAX_TRACE_EVENTS = 20;
+
+  const resetAttemptTrace = React.useCallback(() => {
+    setTrace([]);
+    setTraceTruncatedClient(false);
+    setHintCountUsed(0);
+    setAttemptKey(`attempt-${Date.now()}`);
+    traceStartRef.current = 0;
+  }, []);
 
   const appendTrace = React.useCallback(
     (event: Omit<InteractionTraceEvent, "elapsed_ms">) => {
@@ -104,12 +117,20 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       }
       const elapsed = Math.max(0, Math.round(now - traceStartRef.current));
       setTrace((prev) => {
-        if (prev.length >= MAX_TRACE_EVENTS) return prev;
+        if (prev.length >= MAX_TRACE_EVENTS) {
+          setTraceTruncatedClient(true);
+          return prev;
+        }
         return [...prev, { ...event, elapsed_ms: elapsed }];
       });
     },
     [],
   );
+
+  const showStaleStateBanner = React.useCallback((retry?: () => void) => {
+    retryHandlerRef.current = retry ?? null;
+    setStaleBanner(true);
+  }, []);
 
   const refreshSnapshot = React.useCallback(async () => {
     setLoading(true);
@@ -134,23 +155,23 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         (effect) => effect.type === "open_puzzle",
       );
       if (!openPuzzle?.puzzle_id) return;
-
-      appendTrace({
-        event_type: "prompt_opened",
-        prompt_ref: openPuzzle.puzzle_id,
-      });
       const nextPuzzleRes = await getNextPuzzle(sessionId);
       if (!nextPuzzleRes.ok || !nextPuzzleRes.data) {
         setError(nextPuzzleRes.error?.message ?? "Failed to load puzzle");
         return;
       }
 
+      resetAttemptTrace();
       setModal({
         puzzleId: openPuzzle.puzzle_id,
         puzzle: nextPuzzleRes.data,
       });
+      appendTrace({
+        event_type: "prompt_opened",
+        prompt_ref: openPuzzle.puzzle_id,
+      });
     },
-    [appendTrace, sessionId],
+    [appendTrace, resetAttemptTrace, sessionId],
   );
 
   const runAction = React.useCallback(
@@ -193,7 +214,7 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         } else {
           await refreshSnapshot();
         }
-        setStaleBanner(true);
+        showStaleStateBanner();
         setLoading(false);
         return;
       }
@@ -207,12 +228,17 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       const orderedEffects = response.data.effects ?? [];
       setEffects(orderedEffects);
       setSnapshot(response.data.game_state);
-      setTrace([]);
-      traceStartRef.current = 0;
       setLoading(false);
       await maybeOpenPuzzleModal(orderedEffects);
     },
-    [maybeOpenPuzzleModal, refreshSnapshot, sessionId, snapshot, trace],
+    [
+      maybeOpenPuzzleModal,
+      refreshSnapshot,
+      sessionId,
+      showStaleStateBanner,
+      snapshot,
+      trace,
+    ],
   );
 
   const handleHotspotClicked = async (hotspot: SceneHotspot) => {
@@ -245,13 +271,37 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     setLoading(true);
     setError(null);
 
+    const responseTimeMs =
+      trace.length > 0 ? trace[trace.length - 1].elapsed_ms : 0;
+
+    const interactionTrace = {
+      version: 1,
+      type: "interaction_trace" as const,
+      puzzle_id: modal.puzzleId,
+      variant_id: modal.puzzle.variant_id,
+      trace,
+      response_time_ms: responseTimeMs,
+      _truncated_client: traceTruncatedClient,
+    };
+
     const result = await submitAttempt(sessionId, {
       variant_id: modal.puzzle.variant_id,
       answer: attemptAnswer.trim(),
-      response_time_ms: 0,
-      hint_count_used: hintOpen ? 1 : 0,
-      interaction_trace: trace.length > 0 ? trace : undefined,
+      response_time_ms: responseTimeMs,
+      hint_count_used: hintCountUsed,
+      interaction_trace,
+      game_state_version: snapshot?.game_state_version,
+      metadata: { source: "gameplay_v2" },
     });
+
+    if (result._http_status === 409) {
+      await refreshSnapshot();
+      showStaleStateBanner(() => {
+        setModal((prev) => prev);
+      });
+      setLoading(false);
+      return;
+    }
 
     if (!result.ok) {
       setError(result.error?.message ?? "Attempt failed");
@@ -262,7 +312,8 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     setModal(null);
     setAttemptAnswer("");
     setTrace([]);
-    setHintOpen(false);
+    setTraceTruncatedClient(false);
+    traceStartRef.current = 0;
     setLoading(false);
     await refreshSnapshot();
   };
@@ -288,13 +339,16 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {staleBanner && (
           <div className="mb-3 flex items-center justify-between rounded-md border border-amber-600/40 bg-amber-900/20 px-3 py-2 text-sm text-amber-300">
-            <span>State updated — refreshed</span>
+            <span>State updated. Your action did not apply. Please retry.</span>
             <button
               type="button"
-              onClick={() => setStaleBanner(false)}
+              onClick={() => {
+                setStaleBanner(false);
+                retryHandlerRef.current?.();
+              }}
               className="ml-2 text-xs text-amber-500 hover:text-amber-200"
             >
-              Dismiss
+              Retry
             </button>
           </div>
         )}
@@ -343,32 +397,6 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
           onSelectItem={setSelectedItemId}
           onClearSelection={() => setSelectedItemId(null)}
         />
-
-        <div className="rounded-lg border border-neutral-700 bg-neutral-900/80 p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-300">
-              Hint
-            </h3>
-            <button
-              type="button"
-              onClick={() => {
-                setHintOpen((prev) => !prev);
-                if (!hintOpen) {
-                  appendTrace({ event_type: "hint_opened" });
-                }
-              }}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-            >
-              {hintOpen ? "Hide" : "Open"}
-            </button>
-          </div>
-          {hintOpen && (
-            <p className="text-xs text-neutral-400">
-              Try inspecting the note, then collecting what you need from the
-              drawer.
-            </p>
-          )}
-        </div>
       </div>
 
       {modal && (
@@ -386,22 +414,28 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
               {modal.puzzle.prompt_text}
             </p>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={attemptAnswer}
-                onChange={(event) => setAttemptAnswer(event.target.value)}
-                className="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
-                placeholder="Submit answer via POST /attempts"
+            <div className="space-y-4">
+              <HintPanel
+                hints={modal.puzzle.hints ?? []}
+                attemptKey={attemptKey}
+                maxHintsShown={modal.puzzle.max_hints_shown}
+                onHintOpened={(hintId) => {
+                  appendTrace({
+                    event_type: "hint_opened",
+                    hint_id: hintId,
+                    prompt_ref: modal.puzzle.variant_id,
+                  });
+                }}
+                onHintCountChange={setHintCountUsed}
               />
-              <button
-                type="button"
-                onClick={submitPuzzleAttempt}
-                disabled={loading || !attemptAnswer.trim()}
-                className="rounded-md bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-50"
-              >
-                Submit
-              </button>
+
+              <AnswerPanel
+                answer={attemptAnswer}
+                maxAttemptChars={modal.puzzle.max_attempt_chars}
+                disabled={loading}
+                onChange={setAttemptAnswer}
+                onSubmit={submitPuzzleAttempt}
+              />
             </div>
             <button
               type="button"

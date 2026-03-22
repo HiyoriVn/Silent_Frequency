@@ -74,6 +74,9 @@ export interface NextPuzzleResponse {
   time_limit_sec: number | null;
   interaction_mode: "plain" | "scene_hotspot";
   interaction: Phase3InteractionPayload | null;
+  hints?: string[];
+  max_hints_shown?: number | null;
+  max_attempt_chars?: number | null;
   session_complete: boolean;
 }
 
@@ -84,7 +87,11 @@ export interface SubmitAttemptRequest {
   answer: string;
   response_time_ms: number;
   hint_count_used: number;
-  interaction_trace?: InteractionTraceEvent[] | null;
+  interaction_trace?: InteractionTrace | null;
+  game_state_version?: number;
+  metadata?: {
+    source: string;
+  };
 }
 
 export interface AttemptFeedback {
@@ -163,6 +170,7 @@ export interface InteractionTrace {
   variant_id?: string;
   trace: InteractionTraceEvent[];
   response_time_ms?: number;
+  _truncated_client?: boolean;
 }
 
 // ── Gameplay v2 interaction schema ─────────────────────

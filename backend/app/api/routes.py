@@ -7,15 +7,21 @@ Each route is thin: validate → delegate to service → wrap response.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
+from .. import metrics
 from ..db.database import get_db
+from ..db.models import EventLog, GameState, PuzzleVariant
 from ..services import session_service, mastery_service, puzzle_service, game_service
 from .schemas import (
     ApiResponse,
@@ -33,6 +39,8 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api")
+MAX_TRACE_EVENTS = 20
+MAX_TRACE_EVENT_BYTES = 10_000
 
 
 # ──────────────────────────────────────
@@ -50,6 +58,43 @@ def _error_response(code: str, message: str, status: int = 400) -> HTTPException
             error=ApiError(code=code, message=message),
         ).model_dump(),
     )
+
+
+def _sanitize_trace_events(
+    events: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]] | None, bool]:
+    if events is None:
+        return None, False
+
+    event_count_truncated = len(events) > MAX_TRACE_EVENTS
+    trimmed: list[dict[str, Any]] = []
+    oversized_trimmed = False
+
+    for event in events[:MAX_TRACE_EVENTS]:
+        serialized = json.dumps(event)
+        if len(serialized) <= MAX_TRACE_EVENT_BYTES:
+            trimmed.append(event)
+            continue
+
+        oversized_trimmed = True
+        trimmed.append(
+            {
+                "event_type": event.get("event_type", "unknown"),
+                "hotspot_id": event.get("hotspot_id"),
+                "prompt_ref": event.get("prompt_ref"),
+                "hint_id": event.get("hint_id"),
+                "elapsed_ms": int(event.get("elapsed_ms", 0) or 0),
+                "_oversized": True,
+            }
+        )
+
+    truncated = event_count_truncated or oversized_trimmed
+    if truncated:
+        metrics.increment("telemetry.trace.truncated")
+    if oversized_trimmed:
+        metrics.increment("telemetry.trace.too_large")
+
+    return trimmed, truncated
 
 
 # ──────────────────────────────────────
@@ -129,6 +174,27 @@ async def get_next_puzzle(
     except ValueError as e:
         raise _error_response("SELECTION_ERROR", str(e))
 
+    if data.get("variant_id"):
+        variant_result = await db.execute(
+            select(PuzzleVariant)
+            .options(joinedload(PuzzleVariant.puzzle))
+            .where(PuzzleVariant.id == data["variant_id"])
+        )
+        variant = variant_result.scalar_one_or_none()
+        if variant is not None:
+            metadata = variant.metadata_ or {}
+            data["hints"] = list(metadata.get("hints") or [])
+            data["max_hints_shown"] = metadata.get("max_hints_shown") or variant.puzzle.max_hints
+            interaction = metadata.get("interaction") or {}
+            prompts = interaction.get("prompts") if isinstance(interaction, dict) else None
+            max_attempt_chars = None
+            if isinstance(prompts, dict):
+                for prompt in prompts.values():
+                    if isinstance(prompt, dict) and prompt.get("max_attempt_chars") is not None:
+                        max_attempt_chars = int(prompt["max_attempt_chars"])
+                        break
+            data["max_attempt_chars"] = max_attempt_chars
+
     return ApiResponse(
         ok=True,
         data=NextPuzzleResponse(**data),
@@ -155,6 +221,28 @@ async def submit_attempt(
     if session is None:
         raise _error_response("SESSION_NOT_FOUND", f"Session {session_id} not found", 404)
 
+    if body.game_state_version is not None and session.mode == "gameplay_v2":
+        state = await db.get(GameState, session_id)
+        if state is not None and body.game_state_version != state.game_state_version:
+            snapshot = await game_service.get_game_state(db, session_id)
+            payload = {
+                "ok": False,
+                "data": None,
+                "error": {"code": "STATE_MISMATCH", "message": "client state stale"},
+                "meta": {
+                    "interaction_schema_version": 2,
+                    "game_state_version": state.game_state_version,
+                },
+                "data_snapshot": snapshot,
+            }
+            return JSONResponse(status_code=409, content=jsonable_encoder(payload))
+
+    sanitized_trace: list[dict[str, Any]] | None = None
+    trace_was_truncated = False
+    if body.interaction_trace is not None:
+        raw_events = [event.model_dump() for event in body.interaction_trace.trace]
+        sanitized_trace, trace_was_truncated = _sanitize_trace_events(raw_events)
+
     try:
         data = await puzzle_service.submit_attempt(
             db=db,
@@ -163,12 +251,46 @@ async def submit_attempt(
             player_answer=body.answer,
             response_time_ms=body.response_time_ms,
             hint_count_used=body.hint_count_used,
-            interaction_trace=[e.model_dump() for e in body.interaction_trace]
-            if body.interaction_trace is not None
-            else None,
+            interaction_trace=sanitized_trace,
         )
     except ValueError as e:
         raise _error_response("ATTEMPT_ERROR", str(e))
+
+    if body.metadata is not None or body.interaction_trace is not None:
+        event_result = await db.execute(
+            select(EventLog)
+            .where(
+                EventLog.session_id == session_id,
+                EventLog.event_type == "attempt_submitted",
+            )
+            .order_by(EventLog.id.desc())
+            .limit(1)
+        )
+        attempt_event = event_result.scalar_one_or_none()
+        if attempt_event is not None and body.metadata is not None:
+            payload = dict(attempt_event.payload)
+            payload["metadata"] = body.metadata.model_dump()
+            attempt_event.payload = payload
+
+        if body.interaction_trace is not None:
+            trace_result = await db.execute(
+                select(EventLog)
+                .where(
+                    EventLog.session_id == session_id,
+                    EventLog.event_type == "puzzle_interaction_trace",
+                )
+                .order_by(EventLog.id.desc())
+                .limit(1)
+            )
+            trace_event = trace_result.scalar_one_or_none()
+            if trace_event is not None:
+                trace_payload = dict(trace_event.payload)
+                trace_payload["session_id"] = str(session_id)
+                if trace_was_truncated:
+                    trace_payload["_truncated"] = True
+                trace_event.payload = trace_payload
+
+        await db.commit()
 
     return ApiResponse(
         ok=True,
