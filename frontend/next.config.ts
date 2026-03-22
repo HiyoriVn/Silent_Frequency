@@ -1,9 +1,16 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
-  // Allow specific development origins to request Next.js dev assets.
-  // Add the IP (and port if needed) that showed in the warning.
-  allowedDevOrigins: ["http://26.83.101.154"],
+  turbopack: {
+    root: path.join(__dirname),
+  },
+  allowedDevOrigins: [
+    "localhost",
+    "127.0.0.1",
+    "26.83.101.154",
+    "26.83.101.154:3000",
+  ],
 };
 
 export default nextConfig;

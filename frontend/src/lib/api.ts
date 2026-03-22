@@ -36,10 +36,25 @@ async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<ApiResponse<T>> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch {
+    return {
+      ok: false,
+      data: null,
+      error: {
+        code: "NETWORK_ERROR",
+        message:
+          "Cannot reach API. Check NEXT_PUBLIC_API_URL, backend server status, and CORS allow origins.",
+      },
+      meta: null,
+      _http_status: 0,
+    };
+  }
 
   // FastAPI wraps errors in the envelope too (via HTTPException detail)
   const json = await res.json();

@@ -14,8 +14,6 @@ from .config import get_settings
 from .db.database import engine, Base
 from .api.routes import router
 
-from fastapi.middleware.cors import CORSMiddleware
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -40,7 +38,7 @@ app = FastAPI(
 # CORS — allow the Next.js frontend during development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # dev only
+    allow_origins=settings.cors_allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
