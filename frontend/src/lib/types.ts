@@ -161,16 +161,17 @@ export interface InteractionTraceEvent {
   prompt_ref?: string;
   hint_id?: string;
   elapsed_ms: number;
+  [key: string]: unknown;
 }
 
 export interface InteractionTrace {
-  version?: number;
-  type?: "interaction_trace";
+  version: 1;
+  type: "interaction_trace";
   puzzle_id?: string;
   variant_id?: string;
   trace: InteractionTraceEvent[];
   response_time_ms?: number;
-  _truncated_client?: boolean;
+  _truncated?: true;
 }
 
 // ── Gameplay v2 interaction schema ─────────────────────

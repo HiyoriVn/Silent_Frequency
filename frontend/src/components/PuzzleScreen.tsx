@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import type {
   GameStateObject,
+  InteractionTrace,
   GameStateSnapshot,
   InteractionEffect,
   InteractionTraceEvent,
@@ -38,6 +39,13 @@ interface ActivePuzzleModal {
   puzzleId: string;
   puzzle: NextPuzzleResponse;
 }
+
+type TraceEventInput = {
+  event_type: InteractionTraceEvent["event_type"];
+  hotspot_id?: string;
+  prompt_ref?: string;
+  hint_id?: string;
+};
 
 function extractHotspots(objects: GameStateObject[]): SceneHotspot[] {
   const hotspots: SceneHotspot[] = [];
@@ -90,7 +98,6 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     null,
   );
   const [trace, setTrace] = React.useState<InteractionTraceEvent[]>([]);
-  const [traceTruncatedClient, setTraceTruncatedClient] = React.useState(false);
   const [hintCountUsed, setHintCountUsed] = React.useState(0);
   const [modal, setModal] = React.useState<ActivePuzzleModal | null>(null);
   const [attemptKey, setAttemptKey] = React.useState("attempt-0");
@@ -103,29 +110,28 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
 
   const resetAttemptTrace = React.useCallback(() => {
     setTrace([]);
-    setTraceTruncatedClient(false);
     setHintCountUsed(0);
     setAttemptKey(`attempt-${Date.now()}`);
     traceStartRef.current = 0;
   }, []);
 
-  const appendTrace = React.useCallback(
-    (event: Omit<InteractionTraceEvent, "elapsed_ms">) => {
-      const now = performance.now();
-      if (traceStartRef.current === 0) {
-        traceStartRef.current = now;
+  const appendTrace = React.useCallback((event: TraceEventInput) => {
+    const now = performance.now();
+    if (traceStartRef.current === 0) {
+      traceStartRef.current = now;
+    }
+    const elapsed = Math.max(0, Math.round(now - traceStartRef.current));
+    const nextEvent: InteractionTraceEvent = {
+      ...event,
+      elapsed_ms: elapsed,
+    };
+    setTrace((prev) => {
+      if (prev.length >= MAX_TRACE_EVENTS) {
+        return prev;
       }
-      const elapsed = Math.max(0, Math.round(now - traceStartRef.current));
-      setTrace((prev) => {
-        if (prev.length >= MAX_TRACE_EVENTS) {
-          setTraceTruncatedClient(true);
-          return prev;
-        }
-        return [...prev, { ...event, elapsed_ms: elapsed }];
-      });
-    },
-    [],
-  );
+      return [...prev, nextEvent];
+    });
+  }, []);
 
   const showStaleStateBanner = React.useCallback((retry?: () => void) => {
     retryHandlerRef.current = retry ?? null;
@@ -274,22 +280,24 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     const responseTimeMs =
       trace.length > 0 ? trace[trace.length - 1].elapsed_ms : 0;
 
-    const interactionTrace = {
-      version: 1,
-      type: "interaction_trace" as const,
-      puzzle_id: modal.puzzleId,
-      variant_id: modal.puzzle.variant_id,
-      trace,
-      response_time_ms: responseTimeMs,
-      _truncated_client: traceTruncatedClient,
-    };
+    const interactionTracePayload: InteractionTrace | undefined =
+      trace.length > 0
+        ? {
+            version: 1,
+            type: "interaction_trace",
+            puzzle_id: modal.puzzleId ?? undefined,
+            variant_id: modal.puzzle.variant_id ?? undefined,
+            trace: trace.slice(0, MAX_TRACE_EVENTS),
+            response_time_ms: responseTimeMs ?? undefined,
+          }
+        : undefined;
 
     const result = await submitAttempt(sessionId, {
       variant_id: modal.puzzle.variant_id,
       answer: attemptAnswer.trim(),
       response_time_ms: responseTimeMs,
       hint_count_used: hintCountUsed,
-      interaction_trace,
+      interaction_trace: interactionTracePayload,
       game_state_version: snapshot?.game_state_version,
       metadata: { source: "gameplay_v2" },
     });
@@ -312,7 +320,6 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     setModal(null);
     setAttemptAnswer("");
     setTrace([]);
-    setTraceTruncatedClient(false);
     traceStartRef.current = 0;
     setLoading(false);
     await refreshSnapshot();
