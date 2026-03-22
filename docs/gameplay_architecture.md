@@ -14,6 +14,13 @@ Gameplay v2 introduces room/object/inventory interactions using a typed action A
 - `POST /api/sessions/{session_id}/action`
 - `POST /api/sessions/{session_id}/attempts` (canonical learning endpoint, unchanged)
 
+Telemetry and trace guardrails (Batch 4.3):
+
+- interaction traces are observational only and are never authoritative for gameplay/scoring.
+- server trims traces beyond limits and sets `_truncated: true` on stored payloads.
+- `_http_status` in body metadata is convenience-only; HTTP status/headers are authoritative.
+- see `docs/telemetry_logging.md` for canonical event schemas and retention policy.
+
 All v2 contracts must include `interaction_schema_version: 2`.
 
 Mode and feature-flag enforcement:

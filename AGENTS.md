@@ -164,6 +164,14 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
 - Optional field:
   - `client_action_id`
 
+### Telemetry and Trace Trimming (Batch 4.3)
+
+- `puzzle_interaction_trace` payloads are observational only and MUST NOT affect scoring/progression/BKT.
+- Trace ingestion enforces caps: max 20 events per trace and per-event serialized size guard.
+- If trace data is trimmed for count or size, payload MUST include `_truncated: true` and server should emit metrics for truncation.
+- `_http_status` in payload metadata is an optional internal helper only; HTTP status/header remain authoritative for clients.
+- Canonical telemetry policy and examples are defined in `docs/telemetry_logging.md`.
+
 ### Testing Requirement
 
 - MUST add backend unit tests for action validation, resolver behavior, and effects mapping.
@@ -223,3 +231,4 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
   - Prefer mocking `frontend/src/lib/api.ts` per-test with `jest.mock("src/lib/api")` to return deterministic envelopes.
   - Alternatively add a global `fetch` mock in a Jest setup file (for example `jest.setup.ts`) if many tests rely on fetch directly.
 - **Developer workflow:** For small debugging changes, prefer localized edits (config or test mocks) and run targeted validation. Avoid broad refactors in hotfixes.
+- **Ops runbook:** Use `docs/ops_runbook.md` for gameplay-v2 feature-flag flip, rollback sequencing, migration safety checks, and dedupe cleanup scheduling.

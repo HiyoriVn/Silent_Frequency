@@ -1,0 +1,86 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: silent_frequency
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d silent_frequency"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: silent_frequency
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Prepare migration log file
+        run: mkdir -p ci-artifacts
+
+      - name: Backup test DB
+        run: |
+          export DB_CONTAINER="$(docker ps --filter ancestor=postgres:16 --format '{{.Names}}' | head -n1)"
+          ./scripts/db_backup_and_migrate.sh backup | tee ci-artifacts/migration-backup.log
+
+      - name: Apply migration in test DB (non-interactive)
+        run: |
+          export DB_CONTAINER="$(docker ps --filter ancestor=postgres:16 --format '{{.Names}}' | head -n1)"
+          printf "yes\n" | ./scripts/db_backup_and_migrate.sh migrate | tee ci-artifacts/migration-apply.log
+
+      - name: Run targeted backend tests
+        run: |
+          python -m pytest -q \
+            backend/app/tests/test_gameplay_v2_flow.py \
+            backend/app/tests/test_gameplay_v2_models.py \
+            backend/app/tests/test_gameplay_v2_schemas.py \
+            backend/app/tests/test_action_telemetry.py \
+            backend/app/tests/test_action_telemetry_metrics.py
+
+      - name: Run full backend suite
+        continue-on-error: true
+        run: |
+          python -m pytest -q | tee ci-artifacts/full-suite.log
+
+      - name: Upload backend CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-ci-artifacts
+          path: ci-artifacts/
