@@ -36,6 +36,8 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: silent_frequency
+      PGHOST: localhost
+      PGPORT: 5432
 
     steps:
       - name: Checkout
@@ -46,6 +48,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install system packages (psql client)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
@@ -54,15 +61,31 @@ jobs:
       - name: Prepare migration log file
         run: mkdir -p ci-artifacts
 
-      - name: Backup test DB
+      - name: Wait for Postgres service to be ready
         run: |
-          export DB_CONTAINER="$(docker ps --filter ancestor=postgres:16 --format '{{.Names}}' | head -n1)"
-          ./scripts/db_backup_and_migrate.sh backup | tee ci-artifacts/migration-backup.log
+          for i in $(seq 1 30); do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; then
+              echo "Postgres ready"
+              break
+            fi
+            echo "Waiting for Postgres... attempt $i"
+            sleep 2
+          done
+
+      - name: Backup test DB (pg_dump from runner)
+        env:
+          PGPASSWORD: ${{ env.PGPASSWORD }}
+        run: |
+          echo "Backing up test DB to ci-artifacts/pre_migration.sql"
+          pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" > ci-artifacts/pre_migration.sql
+          echo "Backup saved to ci-artifacts/pre_migration.sql"
 
       - name: Apply migration in test DB (non-interactive)
+        env:
+          PGPASSWORD: ${{ env.PGPASSWORD }}
         run: |
-          export DB_CONTAINER="$(docker ps --filter ancestor=postgres:16 --format '{{.Names}}' | head -n1)"
-          printf "yes\n" | ./scripts/db_backup_and_migrate.sh migrate | tee ci-artifacts/migration-apply.log
+          echo "Applying migration backend/app/db/migrations/20260321_gameplay_v2.sql"
+          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -f backend/app/db/migrations/20260321_gameplay_v2.sql | tee ci-artifacts/migration-apply.log
 
       - name: Run targeted backend tests
         run: |
@@ -73,7 +96,7 @@ jobs:
             backend/app/tests/test_action_telemetry.py \
             backend/app/tests/test_action_telemetry_metrics.py
 
-      - name: Run full backend suite
+      - name: Run full backend suite (non-blocking)
         continue-on-error: true
         run: |
           python -m pytest -q | tee ci-artifacts/full-suite.log
