@@ -31,7 +31,7 @@ resolve_container() {
   fi
 
   local detected
-  detected="$(docker ps --filter "ancestor=postgres" --format "{{.Names}}" | head -n1 || true)"
+  detected="$(docker ps --format "{{.Names}} {{.Image}}" | awk '$2 ~ /^postgres(:|$)/ {print $1; exit}' || true)"
   if [[ -z "${detected}" ]]; then
     echo "ERROR: Could not auto-detect postgres container. Set DB_CONTAINER." >&2
     exit 1
@@ -60,8 +60,9 @@ run_migrate() {
     exit 0
   fi
 
-  docker cp "${MIGRATION_FILE}" "${DB_CONTAINER}:/tmp/20260321_gameplay_v2.sql"
-  docker exec -i "${DB_CONTAINER}" psql -U "${PGUSER}" -d "${PGDATABASE}" -f /tmp/20260321_gameplay_v2.sql
+  # Prevent Git Bash from rewriting in-container POSIX paths like /tmp/...
+  MSYS_NO_PATHCONV=1 docker cp "${MIGRATION_FILE}" "${DB_CONTAINER}:/tmp/20260321_gameplay_v2.sql"
+  MSYS_NO_PATHCONV=1 docker exec -i "${DB_CONTAINER}" psql -U "${PGUSER}" -d "${PGDATABASE}" -f /tmp/20260321_gameplay_v2.sql
   echo "[migrate] complete"
 }
 

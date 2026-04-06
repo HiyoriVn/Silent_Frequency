@@ -47,6 +47,23 @@ type TraceEventInput = {
   hint_id?: string;
 };
 
+function toUserFacingError(
+  code?: string,
+  message?: string,
+  status?: number,
+): string {
+  if (code === "MODE_DISABLED") {
+    return "Gameplay v2 is disabled on the API. Set GAMEPLAY_V2_ENABLED=true and restart uvicorn.";
+  }
+  if (code === "MODE_MISMATCH") {
+    return "This session is not gameplay_v2. Start a new gameplay_v2 session.";
+  }
+  if (status === 403) {
+    return message ?? "Access denied for this session endpoint.";
+  }
+  return message ?? "Request failed";
+}
+
 function extractHotspots(objects: GameStateObject[]): SceneHotspot[] {
   const hotspots: SceneHotspot[] = [];
 
@@ -143,7 +160,13 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     setError(null);
     const response = await getGameState(sessionId);
     if (!response.ok || !response.data) {
-      setError(response.error?.message ?? "Failed to load game state");
+      setError(
+        toUserFacingError(
+          response.error?.code,
+          response.error?.message,
+          response._http_status,
+        ),
+      );
       setLoading(false);
       return;
     }
@@ -226,7 +249,13 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       }
 
       if (!response.ok || !response.data) {
-        setError(response.error?.message ?? "Action failed");
+        setError(
+          toUserFacingError(
+            response.error?.code,
+            response.error?.message,
+            response._http_status,
+          ),
+        );
         setLoading(false);
         return;
       }
