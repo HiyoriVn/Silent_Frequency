@@ -1,4 +1,4 @@
-<!-- CHANGELOG: updated 2026-03-21: normalized to English and expanded gameplay v2 implementation constraints, typed payloads, and rollback guidance -->
+<!-- CHANGELOG: updated 2026-04-07: aligned AGENTS.md with canonical docs set under docs/README.md and replaced legacy doc references -->
 
 # AGENTS.md
 
@@ -31,7 +31,20 @@
 - `frontend/src/lib/types.ts`: API envelope and shared domain types.
 - `frontend/src/components/phases/`: Skill-specific puzzle UIs.
 - `tests/`: API integration and extended BKT tests.
-- `docs/session_flow.md`: Current backend-owned session-flow contract.
+- `docs/README.md`: Canonical entrypoint for project documentation.
+- `docs/03_architecture_overview.md`: Baseline architecture, ownership boundaries, and gameplay_v2 implications.
+- `docs/04_session_and_gameplay_flow.md`: Canonical backend-owned session flow and additive gameplay_v2 runtime flow.
+- `docs/05_api_contracts.md`: Canonical HTTP contracts, conflict semantics, and versioning rules.
+- `docs/08_testing_strategy.md`: Automated and manual validation strategy, including E2E and gameplay_v2 QA.
+- `docs/09_telemetry_and_experiment_logging.md`: Canonical telemetry contracts, retention, and QA thresholds.
+- `docs/10_operations_runbook.md`: Feature-flag, rollback, migration, and maintenance procedures.
+
+## 3.1 Documentation Usage
+
+- Start with `docs/README.md` when you need project documentation.
+- Treat the numbered files in `docs/` as the canonical documentation set.
+- Prefer the new canonical docs over any archived or backup markdown files outside the repository.
+- When implementation behavior, contracts, testing, telemetry, or ops procedures change, update the corresponding canonical docs in the same task.
 
 ## 4. Development Commands
 
@@ -72,6 +85,8 @@
 - MUST NOT move progression decisions into frontend phase components/store.
 - MUST NOT bypass service layer by putting business logic directly in routes.
 - MUST NOT introduce new architectural patterns when existing service/store patterns already fit.
+- MUST treat `docs/README.md` as the documentation entrypoint and use the numbered docs as the canonical reference set.
+- MUST update the relevant canonical docs file whenever API contracts, testing flow, telemetry semantics, or operational procedures change.
 
 ## 6.1 Game-mode v2 — Extension Rules (experimental — gameplay v2)
 
@@ -81,8 +96,6 @@
 
 - Gameplay v2 enables true escape-room interactions while keeping learning validity and backend authority.
 - Every gameplay contract change MUST be versioned using `interaction_schema_version`.
-
-<!-- CHANGELOG: updated 2026-03-21: enforce immutable session.mode, add feature flag and telemetry note -->
 
 ### (experimental — gameplay v2) — Session mode and feature gating
 
@@ -160,6 +173,7 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
   - `item_id` (nullable)
   - `timestamp`
   - `resulting_effects[]`
+
 - `resulting_effects[]` should contain minimal effect references only (type and target/id fields), not full canonical room state snapshots.
 - Optional field:
   - `client_action_id`
@@ -170,7 +184,7 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
 - Trace ingestion enforces caps: max 20 events per trace and per-event serialized size guard.
 - If trace data is trimmed for count or size, payload MUST include `_truncated: true` and server should emit metrics for truncation.
 - `_http_status` in payload metadata is an optional internal helper only; HTTP status/header remain authoritative for clients.
-- Canonical telemetry policy and examples are defined in `docs/telemetry_logging.md`.
+- Canonical telemetry policy and examples are defined in `docs/09_telemetry_and_experiment_logging.md`.
 
 ### Testing Requirement
 
@@ -213,6 +227,7 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
 - Run targeted frontend component tests when touching component behavior.
 - For API contract changes, verify both backend tests and frontend type/client alignment.
 - Keep test fixtures seeded consistently with `backend/app/seed.py` data assumptions.
+- Use `docs/08_testing_strategy.md` as the canonical testing and validation reference.
 
 ## 8. Agent Behavior Guidelines
 
@@ -222,6 +237,7 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
 - When changing endpoints or payloads, update both sides in one task (backend schema/routes and frontend `lib/api.ts` + `lib/types.ts`).
 - Preserve current naming and flow conventions unless explicitly instructed otherwise.
 - If you detect mismatch between docs/tests and current routes, align tests/docs to implemented API instead of adding compatibility hacks.
+- Read `docs/README.md` first when you need repo documentation context.
 
 ## 9. Recent Local Changes & Recommendations
 
@@ -230,5 +246,6 @@ Telemetry minimality: `game_action` telemetry must include only minimal effect r
 - **Frontend tests:** Tests previously failed with `TypeError: Failed to fetch` because they attempted real network requests. Recommended fixes:
   - Prefer mocking `frontend/src/lib/api.ts` per-test with `jest.mock("src/lib/api")` to return deterministic envelopes.
   - Alternatively add a global `fetch` mock in a Jest setup file (for example `jest.setup.ts`) if many tests rely on fetch directly.
+
 - **Developer workflow:** For small debugging changes, prefer localized edits (config or test mocks) and run targeted validation. Avoid broad refactors in hotfixes.
-- **Ops runbook:** Use `docs/ops_runbook.md` for gameplay-v2 feature-flag flip, rollback sequencing, migration safety checks, and dedupe cleanup scheduling.
+- **Ops runbook:** Use `docs/10_operations_runbook.md` for gameplay-v2 feature-flag flip, rollback sequencing, migration safety checks, and dedupe cleanup scheduling.
