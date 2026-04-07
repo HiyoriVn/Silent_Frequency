@@ -2,24 +2,51 @@
 
 ## Purpose
 
-Silent Frequency is an adaptive language-learning escape-room game. It combines structured puzzle progression with mastery-aware difficulty selection to support vocabulary, grammar, and listening practice.
+Silent Frequency is an adaptive language-learning escape-room game prototype.
+
+The current thesis prototype focuses on a single playable chapter that combines:
+
+- room-based exploration
+- object and clue interaction
+- puzzle-driven English learning
+- backend-owned mastery-aware adaptation
+
+The project is intended both as:
+
+1. an educational game prototype
+2. a research artifact for studying adaptive gameplay and learning-flow behavior
 
 ## Product Goals
 
-The project has two main goals:
+The project currently has two main goals:
 
-1. deliver a working educational game prototype
-2. support research and evaluation of adaptive gameplay and learning flow behavior
+1. deliver a stable single-chapter educational game prototype
+2. support pilot-scale research and evaluation of adaptive gameplay, chapter flow, and learning support behavior
+
+### Prototype Scope Rule
+
+The thesis prototype prioritizes one polished playable chapter over a broad but incomplete multi-chapter implementation.
+
+Additional chapters, expanded content banks, and broader mechanics remain future scope unless explicitly implemented and validated.
 
 ## Core Experience
 
-A player session currently follows a backend-owned progression model in which:
+A player session in the current thesis prototype is intended to follow this high-level experience:
 
-- the backend creates and tracks the session
-- the backend selects the next puzzle
-- the frontend renders the returned state
-- player attempts update mastery through the BKT engine
-- optional gameplay v2 adds room/object/inventory interaction without replacing the canonical attempt flow
+1. player enters the game
+2. player completes a short initialization or pre-test flow
+3. player enters a room-based chapter
+4. player explores zones, gathers clues, and interacts with objects
+5. backend resolves gameplay actions and opens puzzle moments when conditions are met
+6. puzzle attempts update mastery through the BKT engine
+7. backend-owned adaptation adjusts later challenge or support behavior
+8. player completes the chapter and receives a summary or post-run reflection
+
+### Important Rule
+
+The primary playable demo is chapter-based and room-driven.
+
+The preserved Phase-3 fixed progression loop remains an important baseline for compatibility, testing, and research comparison, but is not the only intended user-facing flow.
 
 ## Main Subsystems
 
@@ -55,6 +82,17 @@ The content layer stores:
 - item definitions
 - seed data
 
+### Chapter Design Layer
+
+The current prototype also depends on a chapter-design layer that defines:
+
+- zone structure
+- interactable objects
+- traversal logic
+- puzzle gating conditions
+- clue and inventory relationships
+- narrative pacing inside the chapter
+
 ### Research Layer
 
 The research layer depends on:
@@ -84,7 +122,9 @@ Important locations:
 Contributors should:
 
 - prefer minimal, localized changes
-- preserve backend ownership of progression and scoring
+- preserve backend ownership of progression, scoring, and mastery
 - keep frontend and backend contracts aligned
+- preserve chapter coherence when adding new puzzles, objects, or zones
+- reuse a small set of strong mechanics rather than expanding scope too broadly
 - update documentation whenever behavior changes
 - validate changes through the relevant test path before merging

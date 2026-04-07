@@ -19,20 +19,29 @@ It is intended for:
 
 The pilot validates that Silent Frequency is stable enough for controlled use and that core evaluation signals can be collected reliably.
 
-For gameplay_v2 specifically, the pilot should confirm that room-based interactions can coexist with canonical attempt scoring and telemetry without breaking backend authority.
+For the current thesis prototype, the pilot should specifically confirm that:
+
+- a single room-based chapter can be completed without major flow failures
+- chapter interactions and puzzle gating remain understandable
+- adaptive support can coexist with canonical attempt scoring and BKT updates
+- pre-test, chapter gameplay, and post-run data can be collected consistently
+- telemetry and attempt data are reliable enough for thesis-scale analysis
+
+Educational-support findings from this pilot should be treated as exploratory prototype evidence, not as formal proficiency measurement results.
 
 ---
 
-## 2. Gameplay v2 Pilot Baseline
+## 2. Thesis Prototype Pilot Baseline
 
 ### Suggested Initial Scope
 
-- participants: 5 internal users
-- duration: 48 hours
+- participants: small controlled pilot group
+- target scale: 5 to 10 users for internal or pre-thesis validation
 - sessions: 1 session per participant
-- mode: `gameplay_v2`
+- primary mode: chapter-based gameplay_v2 prototype
+- chapter scope: one playable chapter only
 
-This should remain a deliberately small pilot before broader rollout.
+This should remain a deliberately small pilot before any broader rollout or stronger research claims.
 
 ---
 
@@ -46,6 +55,14 @@ The pilot should confirm:
 - telemetry is present and interpretable
 - participants can complete the experience without critical UX blockers
 - canonical attempt scoring and BKT behavior remain intact
+
+The pilot should also confirm:
+
+- pre-test initialization completes without major friction
+- players can understand what to do next inside the chapter
+- zone transitions do not create confusion or accidental dead ends
+- puzzle modal flow feels connected to room exploration rather than detached from it
+- hint and support systems are understandable and not overly intrusive
 
 ---
 
@@ -74,9 +91,13 @@ export GAMEPLAY_V2_ENABLED=true
 
 2. verify backend is reachable and correctly seeded
 3. for each participant:
-   - create a new gameplay_v2 session
-   - complete at least one room action path that opens a puzzle modal
-   - submit at least one puzzle attempt from modal flow
+   - create or register the participant profile as required
+   - complete the pre-test or initialization flow
+   - enter the playable chapter
+   - complete at least one meaningful room-action path that opens a puzzle modal
+   - submit puzzle attempts through the canonical attempt path
+   - reach chapter completion when possible
+   - complete post-run questionnaire or post-test if included
 
 4. collect logs and metrics after each day and at the end of the pilot
 
@@ -110,6 +131,24 @@ export GAMEPLAY_V2_ENABLED=true
 - inventory and dialogue behavior are understandable
 - no major dead-end states block progress without recovery
 
+### Chapter Flow Quality
+
+- time to complete pre-test
+- time to first meaningful interaction
+- time to first puzzle modal
+- chapter completion rate
+- number of dead-end actions or confusion points
+- number of hint requests before first successful puzzle
+- whether players understand zone progression and object affordances
+
+### Educational-support Signals
+
+- distribution of pre-test initialization bands
+- puzzle correctness patterns across the chapter
+- hint usage by puzzle or zone
+- vocabulary board or journal access behavior where tracked
+- post-run perceived learning or confidence feedback
+
 ---
 
 ## 7. Data Collection During Pilot
@@ -132,6 +171,7 @@ For gameplay_v2 analysis, also consider:
 - time-to-first-hint
 - number of stale-state conflicts
 - time from `open_puzzle` effect to attempt submission
+- chapter build or content revision identifier
 
 ---
 
@@ -139,13 +179,15 @@ For gameplay_v2 analysis, also consider:
 
 Suggested success metrics:
 
-- session completion rate
+- chapter completion rate
 - average attempts per puzzle
 - hint usage distribution
+- time to first puzzle completion
+- number of critical confusion points reported
 - conflict recovery rate for gameplay_v2
 - telemetry completeness
 - trace truncation rate
-- user-reported confusion points
+- user-reported clarity, engagement, and perceived support quality
 - absence of regression in canonical Phase-3 scoring flow
 
 ---
@@ -162,6 +204,11 @@ Pause or revert if any of the following occur:
 - repeated `409` loops lead to unusable recovery UX
 - `telemetry.trace.too_large > 0`
 - malformed or unbounded trace payload growth appears
+- players consistently fail to understand chapter goals
+- room interactions repeatedly lead to dead ends without recovery
+- puzzle modal flow feels detached from room gameplay
+- pre-test causes excessive fatigue before gameplay
+- chapter completion becomes too rare to support pilot analysis
 
 ---
 
@@ -200,7 +247,7 @@ After pilot completion:
 
 1. summarize system stability
 2. summarize telemetry quality
-3. identify content or UX bottlenecks
+3. identify chapter content, zone, or UX bottlenecks
 4. review threats to validity
 5. classify issues by severity
 6. decide whether to proceed, revise, narrow scope, or pause
@@ -208,9 +255,10 @@ After pilot completion:
 Recommended outputs:
 
 - pilot summary note
+- chapter flow review
 - telemetry quality summary
 - incident list
-- decision memo for next rollout step
+- decision memo for next revision step
 
 ---
 

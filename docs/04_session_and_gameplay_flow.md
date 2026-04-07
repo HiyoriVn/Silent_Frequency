@@ -8,18 +8,23 @@ This document defines the canonical runtime flow for Silent Frequency.
 
 It covers:
 
-- the Phase-3 canonical session loop
+- the preserved Phase-3 canonical session loop
+- the current chapter-based thesis prototype flow
 - backend ownership rules
 - frontend responsibilities
 - additive gameplay v2 flow
-- coexistence between gameplay actions and canonical attempts
-- conflict, hint, and recovery behavior
+- coexistence between room actions, puzzle attempts, and mastery updates
+- pre-test, hint, and recovery behavior
 
-> **Phase-3 canonical:** The fixed 9-step progression script below remains the canonical production learning flow. Gameplay v2 is additive and must not silently replace it.
+> **Current thesis prototype direction:** the primary playable demo is a chapter-based room experience built on gameplay_v2-style interaction, while the preserved Phase-3 flow remains available as a baseline reference for compatibility, testing, and research comparison.
 
 ---
 
-## 1. Canonical Session Lifecycle
+## 1. Preserved Phase-3 Baseline Session Lifecycle
+
+This fixed 9-step script remains the preserved baseline progression model used for compatibility, regression testing, and comparison against room-based chapter flow.
+
+It should not be treated as the only user-facing runtime flow for the current thesis prototype.
 
 The backend owns session progression through a fixed 9-step script.
 
@@ -49,12 +54,154 @@ The backend owns session progression through a fixed 9-step script.
 
 ---
 
-## 2. Canonical API Flow
+## 2. Current Chapter-based Thesis Prototype Flow
+
+The current thesis prototype is centered on a single playable chapter built as a room-based escape experience.
+
+The chapter is structured as:
+
+1. landing page
+2. account/login or participant entry
+3. story introduction
+4. short pre-test
+5. chapter entry
+6. room and zone exploration
+7. gameplay actions and clue gathering
+8. puzzle modal opening from room interactions
+9. answer submission through canonical attempt endpoint
+10. mastery-aware adaptation for later puzzle delivery, hinting, or difficulty
+11. chapter completion
+12. post-run summary and optional post-test/questionnaire
+
+### Chapter Structure
+
+A chapter may contain multiple connected zones inside one map, for example:
+
+- patient room
+- nurse station
+- hallway
+- security office
+- exit area
+
+Not every zone needs to contain a full puzzle. Some zones may exist only for traversal, clue placement, pacing, or narrative transition.
+
+### Runtime Rule
+
+Chapter progression is primarily controlled by:
+
+- canonical room/object/inventory state
+- FSM-style gating or world-state preconditions
+- puzzle completion results
+- backend-owned adaptation state
+
+It is **not** controlled purely by a fixed skill-slot script during the primary gameplay path.
+
+Note: account/login or participant entry is a product-layer onboarding step.
+
+Canonical gameplay and research session tracking still begin at session creation time. Depending on implementation stage, a session may be created either:
+
+- immediately after participant identification, or
+- after authenticated account entry and pre-test initialization.
+
+---
+
+## 3. Pre-test and Initialization Flow
+
+Before the player enters the chapter, the system may run a short pre-test.
+
+### Purpose
+
+The pre-test exists to:
+
+- initialize the learner profile
+- estimate a starting proficiency band or mastery prior
+- support safer first-puzzle selection and hint policy
+
+### Design Guidance
+
+The pre-test should remain short enough to avoid exhausting the player before gameplay begins.
+
+Recommended prototype constraints:
+
+- approximately 15 items maximum
+- mixed difficulty
+- used for initialization only, not as a standalone proficiency claim
+
+### Runtime Effect
+
+Pre-test output may initialize:
+
+- starting mastery priors
+- difficulty band mapping
+- first-puzzle tier policy
+- early hint assistance level
+
+Finer-grained banding, when used, should map into the runtime-supported gameplay tiers rather than requiring a full parallel content bank for every band.
+
+---
+
+## 4. Chapter Action -> Puzzle -> Update Loop
+
+During chapter gameplay, the canonical runtime loop is:
+
+1. frontend fetches canonical game state
+2. player explores one zone of the map
+3. player performs a gameplay action
+4. backend resolves action and returns typed declarative effects
+5. frontend updates UI only from canonical response
+6. if an `open_puzzle` effect is returned, frontend opens the puzzle modal
+7. player submits the answer through `POST /api/sessions/{session_id}/attempts`
+8. backend scores the attempt, updates BKT/mastery, logs telemetry, and returns canonical results
+9. frontend renders updated feedback and continues chapter progression
+
+### Important Rule
+
+Gameplay actions and puzzle attempts serve different purposes:
+
+- `POST /action` changes room/object/inventory/dialogue state
+- `POST /attempts` remains the canonical learning and mastery update path
+
+## 5. Mastery-aware Adaptation in Chapter Flow
+
+The thesis prototype uses backend-owned adaptive support rather than a fully psychometric CAT implementation.
+
+### Adaptive Inputs
+
+Adaptive decisions may consider:
+
+- current skill mastery estimate
+- pre-test initialization result
+- recent correctness
+- hint usage
+- retry count
+- puzzle availability within current chapter state
+
+### Adaptive Outputs
+
+The backend may adapt:
+
+- puzzle difficulty tier
+- hint disclosure timing
+- follow-up puzzle variant choice
+- pacing of challenge escalation
+
+### Constraint
+
+Adaptive logic must remain compatible with chapter gating.
+
+The backend must not select a puzzle that violates current room/FSM/world-state constraints, even if that puzzle would otherwise match the preferred skill or tier.
+
+## 6. Canonical API Flow
+
+The examples below describe the minimal canonical session API.
+
+In product UX, session creation may occur after participant entry, account login, or pre-test initialization, depending on the current prototype implementation.
 
 ### Session Start
 
 - `POST /api/sessions`
-- Input includes: `display_name`, `condition`
+- Minimal baseline input includes: `display_name`, `condition`
+- Product-facing flows may derive these values after participant entry or authenticated onboarding
 - Output includes: `condition`, `current_level_index`
 - `mode` may be included when gameplay v2 support is enabled
 
@@ -149,15 +296,16 @@ Example response:
 
 ---
 
-## 3. Backend Ownership Rules
+## 7. Backend Ownership Rules
 
 Backend ownership means:
 
-1. client no longer asks for puzzle by skill
-2. backend controls which skill and slot comes next
-3. backend controls completion state
-4. session condition is stored server-side and used for tier policy
-5. backend remains authoritative for scoring, BKT, and progression
+1. client does not decide canonical puzzle progression
+2. backend controls skill/slot progression in the preserved Phase-3 baseline
+3. backend controls gated puzzle availability in chapter-based gameplay flow
+4. backend controls completion state
+5. session condition is stored server-side and used for tier or support policy
+6. backend remains authoritative for scoring, BKT, and progression
 
 ### Difficulty Policy
 
@@ -187,7 +335,7 @@ How they move:
 
 ---
 
-## 4. Frontend Responsibilities
+## 8. Frontend Responsibilities
 
 The frontend is responsible for display and input only.
 
@@ -217,7 +365,7 @@ The frontend is responsible for display and input only.
 
 ---
 
-## 5. Gameplay v2 Overview
+## 9. Gameplay v2 Overview
 
 > **experimental — gameplay v2:** Additive API and content path for room, object, inventory, and dialogue interactions. It does not replace the canonical fixed 9-step learning flow.
 
@@ -257,7 +405,7 @@ Recommended mode-gate failure:
 
 ---
 
-## 6. Gameplay v2 Endpoints in Runtime Flow
+## 10. Gameplay v2 Endpoints in Runtime Flow
 
 ### `GET /api/sessions/{session_id}/game-state`
 
@@ -380,7 +528,7 @@ Success example:
 
 ---
 
-## 7. Conflict and Concurrency Behavior
+## 11. Conflict and Concurrency Behavior
 
 If an action conflicts with current canonical state, the server should return `409 Conflict` and include the latest canonical snapshot needed for UI recovery.
 
@@ -445,7 +593,7 @@ Frontend should:
 
 ---
 
-## 8. Dedupe and Idempotency
+## 12. Dedupe and Idempotency
 
 - Server should dedupe by `(session_id, client_action_id)` when `client_action_id` is present.
 - Recommended behavior:
@@ -497,7 +645,7 @@ Frontend should:
 
 ---
 
-## 9. Coexistence with Canonical Attempts
+## 13. Coexistence with Canonical Attempts
 
 `POST /api/sessions/{session_id}/attempts` remains the canonical learning endpoint.
 
@@ -511,7 +659,7 @@ This rule preserves comparability across Phase-3 and gameplay v2 sessions.
 
 ---
 
-## 10. Auto-hint Policy
+## 14. Auto-hint Policy
 
 Auto-hint policy is backend-configurable and must not be inferred client-side.
 
@@ -523,6 +671,10 @@ Suggested configuration:
   "failed_attempts_threshold": 2
 }
 ```
+
+For chapter-based prototype flow, hint policy may also vary by chapter state.
+
+Early tutorial states may allow more guided support, while later states should gradually reduce direct guidance and require stronger player-driven problem solving.
 
 Required telemetry event for hint disclosure:
 
@@ -540,7 +692,7 @@ Required telemetry event for hint disclosure:
 
 ---
 
-## 11. Maintenance Notes
+## 15. Maintenance Notes
 
 For student maintainers:
 

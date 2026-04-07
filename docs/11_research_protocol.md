@@ -20,16 +20,21 @@ consistent and reproducible.
 
 ## 1. Research Purpose
 
-Silent Frequency supports research in adaptive educational gameplay and software-engineering-backed interactive systems.
+Silent Frequency supports research in adaptive educational gameplay and software-engineering-backed interactive learning systems.
 
-The artifact is intended to support questions about:
+In the current thesis prototype, the artifact is specifically intended to support questions about:
 
-- adaptive difficulty effectiveness
-- learning flow reliability
-- gameplay-enhanced engagement
-- interaction trace usefulness
-- backend-owned progression validity
-- reproducibility of educational game experiments
+- whether a room-based chapter can support English-learning tasks in a coherent gameplay flow
+- whether backend-owned adaptive support can be integrated without breaking gameplay structure
+- how players interact with puzzle, clue, and support systems
+- how mastery-aware adaptation affects pacing, hint use, or challenge level
+- whether the prototype is stable enough for pilot-scale controlled evaluation
+
+### Scope Rule
+
+The current thesis prototype is not a standardized proficiency-testing system.
+
+It should be treated as a prototype for adaptive learning support inside a chapter-based game experience.
 
 ---
 
@@ -60,7 +65,26 @@ Where sample size is too small, report limitations explicitly rather than combin
 
 ---
 
-## 3. Artifact Validity Requirements
+## 3. Chapter and Content Versioning
+
+Because the current thesis prototype is centered on a single playable chapter, each research run should record chapter-level content assumptions explicitly.
+
+Record at minimum:
+
+- chapter identifier
+- chapter version or content revision
+- room/zone content revision where relevant
+- puzzle content revision
+- feature-flag state
+- build or commit hash
+
+### Rule
+
+Do not combine sessions from materially different chapter builds in one analysis group unless the content differences are explicitly documented and justified.
+
+---
+
+## 4. Artifact Validity Requirements
 
 For a valid research run:
 
@@ -75,7 +99,7 @@ For a valid research run:
 
 ---
 
-## 4. Data Collection Requirements
+## 5. Data Collection Requirements
 
 Record at minimum:
 
@@ -98,9 +122,19 @@ For gameplay v2, also record:
 - action diversity
 - whether `metadata.source="gameplay_v2"` is present for modal attempts
 
+For the current thesis prototype, also record where applicable:
+
+- pre-test result or initialization band
+- chapter identifier
+- chapter completion status
+- zone traversal summary
+- hint resource usage (for example battery-based hint economy if enabled)
+- vocabulary board or journal access behavior when relevant
+- post-run questionnaire or post-test availability
+
 ---
 
-## 5. Telemetry Interpretation Rules
+## 6. Telemetry Interpretation Rules
 
 Telemetry is useful for:
 
@@ -108,6 +142,7 @@ Telemetry is useful for:
 - interaction sequence inspection
 - dead-end action analysis
 - hint usage patterns
+- vocabulary board or journal consultation behavior
 - recovery behavior after conflicts
 - mapping room actions to learning attempts
 
@@ -116,7 +151,8 @@ Telemetry is not authoritative for:
 - scoring
 - mastery
 - progression
-- completion state
+- final learning outcomes
+- standardized language proficiency claims
 
 Research claims should not be based on telemetry alone.
 
@@ -124,7 +160,7 @@ Canonical attempt data and known experimental conditions must remain the primary
 
 ---
 
-## 6. Threats to Validity
+## 7. Threats to Validity
 
 Typical threats include:
 
@@ -156,9 +192,17 @@ Typical threats include:
 - missing telemetry coverage
 - undocumented content changes between runs
 
+### Chapter-prototype validity risks
+
+- single-chapter scope may limit generalizability
+- puzzle quality may vary across mechanics or zones
+- narrative support elements may affect engagement independently of adaptation
+- pre-test initialization may be too coarse for strong learning claims
+- chapter-specific asset or UI issues may distort evaluation results
+
 ---
 
-## 7. Reproducibility Checklist
+## 8. Reproducibility Checklist
 
 For every experimental run:
 
@@ -173,7 +217,7 @@ For every experimental run:
 
 ---
 
-## 8. Cross-phase Research Guardrails
+## 9. Cross-phase Research Guardrails
 
 These rules should hold across implementation phases:
 
@@ -188,7 +232,7 @@ These rules should hold across implementation phases:
 
 ---
 
-## 9. Evaluation Guidance by Implementation Phase
+## 10. Evaluation Guidance by Implementation Phase
 
 ### Canonical Phase-3
 
@@ -212,13 +256,25 @@ In addition to canonical metrics, examine:
 - time from `open_puzzle` effect to attempt submission
 - mapping from gameplay actions to learning attempts
 
+### Single-chapter thesis prototype
+
+For the current thesis prototype, evaluation should focus on:
+
+- chapter completion rate
+- puzzle completion patterns
+- hint dependence
+- dead-end or confusion points
+- adaptive vs static support behavior where applicable
+- player-reported clarity and engagement
+- integrity of canonical attempt and mastery data
+
 ### Important Note
 
-Always analyze Phase-3 and gameplay_v2 cohorts separately unless you can justify a merged analysis design.
+Because the prototype currently centers on one playable chapter, conclusions should be reported as prototype-scale findings rather than broad claims about all future chapters or all English-learning contexts.
 
 ---
 
-## 10. Research Operations Guidance
+## 11. Research Operations Guidance
 
 Before data collection starts:
 
@@ -246,7 +302,7 @@ After a pilot:
 
 ---
 
-## 11. Reporting Guidance
+## 12. Reporting Guidance
 
 When writing thesis or paper sections:
 
@@ -267,3 +323,11 @@ Recommended structure for reporting:
 6. results
 7. limitations
 8. future work
+
+For thesis reporting, explicitly distinguish:
+
+- implemented single-chapter prototype behavior
+- preserved baseline/legacy flow
+- proposed future multi-chapter expansion
+
+Avoid presenting proposed future systems as if they were already implemented and evaluated.
