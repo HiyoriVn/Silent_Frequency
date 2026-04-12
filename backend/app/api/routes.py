@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -22,11 +22,15 @@ from sqlalchemy.orm import joinedload
 from .. import metrics
 from ..db.database import get_db
 from ..db.models import EventLog, GameState, PuzzleVariant
-from ..services import session_service, mastery_service, puzzle_service, game_service
+from ..services import auth_service, session_service, mastery_service, puzzle_service, game_service
 from .schemas import (
     ApiResponse,
     ApiMeta,
     ApiError,
+    RegisterRequest,
+    LoginRequest,
+    AuthResponseData,
+    LogoutResponseData,
     CreateSessionRequest,
     SessionCreated,
     MasterySnapshot,
@@ -58,6 +62,16 @@ def _error_response(code: str, message: str, status: int = 400) -> HTTPException
             error=ApiError(code=code, message=message),
         ).model_dump(),
     )
+
+
+def _extract_bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return None
+    token = authorization[len(prefix):].strip()
+    return token or None
 
 
 def _sanitize_trace_events(
@@ -98,6 +112,79 @@ def _sanitize_trace_events(
 
 
 # ──────────────────────────────────────
+# POST /api/auth/register
+# ──────────────────────────────────────
+@router.post("/auth/register", response_model=ApiResponse)
+async def register(
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        data = await auth_service.register_user(
+            db,
+            username=body.username,
+            password=body.password,
+            real_name=body.real_name,
+        )
+    except auth_service.AuthServiceError as exc:
+        raise _error_response(exc.code, exc.message, exc.status_code)
+
+    return ApiResponse(
+        ok=True,
+        data=AuthResponseData(**data),
+        meta=None,
+    )
+
+
+# ──────────────────────────────────────
+# POST /api/auth/login
+# ──────────────────────────────────────
+@router.post("/auth/login", response_model=ApiResponse)
+async def login(
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        data = await auth_service.login_user(
+            db,
+            username=body.username,
+            password=body.password,
+        )
+    except auth_service.AuthServiceError as exc:
+        raise _error_response(exc.code, exc.message, exc.status_code)
+
+    return ApiResponse(
+        ok=True,
+        data=AuthResponseData(**data),
+        meta=None,
+    )
+
+
+# ──────────────────────────────────────
+# POST /api/auth/logout
+# ──────────────────────────────────────
+@router.post("/auth/logout", response_model=ApiResponse)
+async def logout(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    auth_token = _extract_bearer_token(authorization)
+    if auth_token is None:
+        raise _error_response("INVALID_TOKEN", "Missing or invalid bearer token", 401)
+
+    try:
+        await auth_service.logout_user(db, auth_token)
+    except auth_service.AuthServiceError as exc:
+        raise _error_response(exc.code, exc.message, exc.status_code)
+
+    return ApiResponse(
+        ok=True,
+        data=LogoutResponseData(logged_out=True),
+        meta=None,
+    )
+
+
+# ──────────────────────────────────────
 # POST /api/sessions
 # ──────────────────────────────────────
 @router.post("/sessions", response_model=ApiResponse)
@@ -111,6 +198,7 @@ async def create_session(
         body.display_name,
         body.condition,
         body.mode,
+        body.self_assessed_level,
     )
 
     return ApiResponse(
@@ -121,6 +209,7 @@ async def create_session(
             session_token=data["session_token"],
             condition=data["condition"],
             mode=data["mode"],
+            self_assessed_level=data["self_assessed_level"],
             current_level_index=data["current_level_index"],
             mastery=MasterySnapshot(**data["mastery"]),
             current_room=data["current_room"],

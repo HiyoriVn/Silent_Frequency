@@ -1,0 +1,164 @@
+{
+  "interaction_schema_version": 2,
+  "room_id": "patient_room_404",
+  "background_asset_key": "patient_room_404__bg_01_bed_wall",
+  "views": [
+    {
+      "id": "patient_room_404__bg_01_bed_wall",
+      "type": "bg_view",
+      "asset_key": "placeholder_room404_bed_wall"
+    },
+    {
+      "id": "patient_room_404__bg_04_door_side",
+      "type": "bg_view",
+      "asset_key": "placeholder_room404_door_side"
+    },
+    {
+      "id": "patient_room_404__sub_bedside_drawer",
+      "type": "sub_view",
+      "asset_key": "placeholder_room404_bedside_drawer"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "bedside_table",
+      "parent_view_id": "patient_room_404__bg_01_bed_wall",
+      "type": "container",
+      "visibility_intent": "visible",
+      "clickability_intent": "enabled",
+      "target_action": "open_sub_view",
+      "target_view_id": "patient_room_404__sub_bedside_drawer"
+    },
+    {
+      "id": "folded_note",
+      "parent_view_id": "patient_room_404__sub_bedside_drawer",
+      "type": "collectible",
+      "visibility_intent": "hidden_until_sub_view_open",
+      "clickability_intent": "enabled_when_visible",
+      "target_action": "collect"
+    },
+    {
+      "id": "warning_sign",
+      "parent_view_id": "patient_room_404__bg_04_door_side",
+      "type": "puzzle_trigger",
+      "visibility_intent": "visible",
+      "clickability_intent": "enabled",
+      "target_action": "open_puzzle",
+      "target_puzzle_id": "p_warning_sign_translate"
+    },
+    {
+      "id": "main_door",
+      "parent_view_id": "patient_room_404__bg_04_door_side",
+      "type": "navigation",
+      "visibility_intent": "visible",
+      "clickability_intent": "enabled_when_unlocked",
+      "target_action": "navigation"
+    }
+  ],
+  "objects": [
+    {
+      "id": "bedside_table",
+      "type": "container",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true,
+        "view_id": "patient_room_404__bg_01_bed_wall"
+      }
+    },
+    {
+      "id": "folded_note",
+      "type": "clue",
+      "state": "hidden",
+      "properties": {
+        "revealed": false,
+        "view_id": "patient_room_404__sub_bedside_drawer"
+      }
+    },
+    {
+      "id": "warning_sign",
+      "type": "interactable",
+      "state": "revealed",
+      "properties": {
+        "revealed": true,
+        "view_id": "patient_room_404__bg_04_door_side"
+      }
+    },
+    {
+      "id": "main_door",
+      "type": "door",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true,
+        "view_id": "patient_room_404__bg_04_door_side"
+      }
+    },
+    {
+      "id": "old_radio",
+      "type": "interactable",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true
+      }
+    },
+    {
+      "id": "drawer",
+      "type": "container",
+      "state": "locked",
+      "properties": {
+        "locked": true,
+        "revealed": true
+      }
+    },
+    {
+      "id": "note",
+      "type": "clue",
+      "state": "revealed",
+      "properties": {
+        "revealed": true
+      }
+    }
+  ],
+  "items": {
+    "bent_key": {
+      "id": "bent_key",
+      "display_name": "Bent Key",
+      "category": "tool",
+      "consumed": false,
+      "properties": {}
+    }
+  },
+  "effects": {
+    "take_item:drawer": [
+      {
+        "type": "add_item",
+        "item_id": "bent_key",
+        "target_id": "bent_key"
+      }
+    ],
+    "inspect:note": [
+      {
+        "type": "show_dialogue",
+        "target_id": "note",
+        "dialogue_id": "note_read_01",
+        "dialogue_text": "The note says: tune the old radio and listen for the code."
+      }
+    ],
+    "use_item:old_radio:bent_key": [
+      {
+        "type": "unlock",
+        "target_id": "old_radio"
+      },
+      {
+        "type": "open_puzzle",
+        "puzzle_id": "start_listen_code"
+      }
+    ]
+  },
+  "hint_policy": {
+    "idle_seconds": 45,
+    "failed_attempts_threshold": 2
+  }
+}

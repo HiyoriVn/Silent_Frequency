@@ -23,11 +23,35 @@ from ..db.models import (
 )
 
 
+_ROOM404_DEFAULT_FLAGS = {
+    "first_language_interaction_done": False,
+    "bedside_note_collected": False,
+    "room404_exit_unlocked": False,
+}
+
+
+def _initial_gameplay_flags(self_assessed_level: str | None) -> dict:
+    flags = dict(_ROOM404_DEFAULT_FLAGS)
+    if self_assessed_level is not None:
+        flags["self_assessed_level"] = self_assessed_level
+
+    return {
+        "chapter_id": "chapter_1",
+        "zone_id": "patient_room_404",
+        "view_id": "patient_room_404__bg_01_bed_wall",
+        "sub_view_id": None,
+        "fsm_state": "room404_idle",
+        "flags": flags,
+        "journal_entries": [],
+    }
+
+
 async def create_session(
     db: AsyncSession,
     display_name: str,
     condition: str = "adaptive",
     mode: str = "phase3",
+    self_assessed_level: str | None = None,
 ) -> dict:
     """
     Create a new player + game session + initial BKT estimates + game state.
@@ -48,7 +72,7 @@ async def create_session(
         condition=condition,
         mode=mode,
         current_level_index=0,
-        current_room="lab1" if mode == "gameplay_v2" else "start_room",
+        current_room="patient_room_404" if mode == "gameplay_v2" else "start_room",
     )
     db.add(session)
     await db.flush()
@@ -71,7 +95,16 @@ async def create_session(
         mastery[skill.code] = skill.bkt_p_l0
 
     # 4. Create initial game state
-    game_state = GameState(session_id=session.id)
+    game_state_flags = (
+        _initial_gameplay_flags(self_assessed_level)
+        if mode == "gameplay_v2"
+        else ({"self_assessed_level": self_assessed_level} if self_assessed_level else {})
+    )
+    game_state = GameState(
+        session_id=session.id,
+        flags=game_state_flags,
+        inventory=[],
+    )
     db.add(game_state)
 
     # 5. Log session creation
@@ -83,6 +116,7 @@ async def create_session(
             "map_id": session.map_id,
             "condition": session.condition,
             "mode": session.mode,
+            "self_assessed_level": self_assessed_level,
             "current_level_index": session.current_level_index,
         },
     ))
@@ -95,6 +129,7 @@ async def create_session(
         "session_token": player.session_token,
         "condition": session.condition,
         "mode": session.mode,
+        "self_assessed_level": self_assessed_level,
         "current_level_index": session.current_level_index,
         "mastery": mastery,
         "current_room": session.current_room,

@@ -56,6 +56,27 @@ class Player(Base):
 
 
 # ──────────────────────────────────────
+# 1b. user_accounts (minimal auth)
+# ──────────────────────────────────────
+class UserAccount(Base):
+    __tablename__ = "user_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    real_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    auth_token: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ──────────────────────────────────────
 # 2. skills
 # ──────────────────────────────────────
 class Skill(Base):

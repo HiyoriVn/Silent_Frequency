@@ -7,6 +7,9 @@
 
 import type {
   ApiResponse,
+  AuthResponseData,
+  LogoutResponseData,
+  SelfAssessedLevel,
   SessionCreated,
   MasteryResponse,
   NextPuzzleResponse,
@@ -66,14 +69,52 @@ async function request<T>(
 
 // ── endpoints ────────────────────────────────────────────
 
+export async function registerUser(
+  username: string,
+  password: string,
+  realName?: string,
+) {
+  return request<AuthResponseData>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      username,
+      password,
+      real_name: realName?.trim() || undefined,
+    }),
+  });
+}
+
+export async function loginUser(username: string, password: string) {
+  return request<AuthResponseData>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function logoutUser(authToken: string) {
+  return request<LogoutResponseData>("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+  });
+}
+
 export async function createSession(
   displayName: string,
   condition: "adaptive" | "static" = "adaptive",
   mode: "phase3" | "gameplay_v2" = "phase3",
+  selfAssessedLevel?: SelfAssessedLevel,
 ) {
   return request<SessionCreated>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ display_name: displayName, condition, mode }),
+    body: JSON.stringify({
+      display_name: displayName,
+      condition,
+      mode,
+      self_assessed_level: selfAssessedLevel,
+    }),
   });
 }
 

@@ -203,8 +203,20 @@ def _build_snapshot(
     state: GameState,
     template_payload: dict[str, Any],
 ) -> dict[str, Any]:
-    room_state = state.flags.get("room_state") if isinstance(state.flags, dict) else None
-    active_puzzles = state.flags.get("active_puzzles") if isinstance(state.flags, dict) else None
+    state_flags = state.flags if isinstance(state.flags, dict) else {}
+    room_state = state_flags.get("room_state") if isinstance(state_flags, dict) else None
+    active_puzzles = state_flags.get("active_puzzles") if isinstance(state_flags, dict) else None
+
+    canonical_flags = state_flags.get("flags") if isinstance(state_flags.get("flags"), dict) else {}
+    if not canonical_flags and state_flags.get("self_assessed_level") is not None:
+        canonical_flags = {"self_assessed_level": state_flags.get("self_assessed_level")}
+    journal_entries = state_flags.get("journal_entries") if isinstance(state_flags.get("journal_entries"), list) else []
+
+    chapter_id = state_flags.get("chapter_id") or "chapter_1"
+    zone_id = state_flags.get("zone_id") or "patient_room_404"
+    view_id = state_flags.get("view_id") or "patient_room_404__bg_01_bed_wall"
+    sub_view_id = state_flags.get("sub_view_id")
+    fsm_state = state_flags.get("fsm_state") or "room404_idle"
 
     if room_state is None:
         room_state = template_payload.get("objects", _default_room_state())
@@ -216,6 +228,13 @@ def _build_snapshot(
     return {
         "interaction_schema_version": 2,
         "session_id": session.id,
+        "chapter_id": chapter_id,
+        "zone_id": zone_id,
+        "view_id": view_id,
+        "sub_view_id": sub_view_id,
+        "fsm_state": fsm_state,
+        "flags": canonical_flags,
+        "journal_entries": journal_entries,
         "game_state_version": state.game_state_version,
         "updated_at": state.updated_at,
         "room_id": template_payload.get("room_id", session.current_room),

@@ -37,6 +37,32 @@ class ApiResponse(BaseModel):
 
 
 # ──────────────────────────────────────
+# POST /api/auth/* — minimal auth
+# ──────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=8, max_length=256)
+    real_name: str | None = Field(default=None, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=1, max_length=256)
+
+
+class AuthResponseData(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    real_name: str | None = None
+    auth_token: str
+
+
+class LogoutResponseData(BaseModel):
+    logged_out: bool = True
+
+
+# ──────────────────────────────────────
 # POST /api/sessions  — create session
 # ──────────────────────────────────────
 
@@ -44,6 +70,12 @@ class CreateSessionRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=64)
     condition: Literal["adaptive", "static"] = "adaptive"
     mode: Literal["phase3", "gameplay_v2"] = "phase3"
+    self_assessed_level: Literal[
+        "beginner",
+        "elementary",
+        "intermediate",
+        "upper_intermediate",
+    ] | None = None
 
 
 class MasterySnapshot(BaseModel):
@@ -58,6 +90,12 @@ class SessionCreated(BaseModel):
     session_token: str
     condition: Literal["adaptive", "static"]
     mode: Literal["phase3", "gameplay_v2"]
+    self_assessed_level: Literal[
+        "beginner",
+        "elementary",
+        "intermediate",
+        "upper_intermediate",
+    ] | None = None
     current_level_index: int
     mastery: MasterySnapshot
     current_room: str
@@ -98,6 +136,13 @@ class GameStateSnapshot(BaseModel):
 
     interaction_schema_version: Literal[2] = 2
     session_id: uuid.UUID
+    chapter_id: str = "chapter_1"
+    zone_id: str = "patient_room_404"
+    view_id: str = "patient_room_404__bg_01_bed_wall"
+    sub_view_id: str | None = None
+    fsm_state: str = "room404_idle"
+    flags: dict[str, Any] = Field(default_factory=dict)
+    journal_entries: list[dict[str, Any]] = Field(default_factory=list)
     game_state_version: int = Field(ge=0)
     updated_at: datetime
     room_id: str

@@ -27,6 +27,25 @@ export interface ApiResponse<T = unknown> {
   _http_status?: number;
 }
 
+// ── POST /api/auth/* ──────────────────────────────────
+
+export interface AuthResponseData {
+  user_id: string;
+  username: string;
+  real_name: string | null;
+  auth_token: string;
+}
+
+export interface LogoutResponseData {
+  logged_out: boolean;
+}
+
+export type SelfAssessedLevel =
+  | "beginner"
+  | "elementary"
+  | "intermediate"
+  | "upper_intermediate";
+
 // ── POST /api/sessions ──────────────────────────────────
 
 export interface MasterySnapshot {
@@ -41,6 +60,7 @@ export interface SessionCreated {
   session_token: string;
   condition: "adaptive" | "static";
   mode: "phase3" | "gameplay_v2";
+  self_assessed_level: SelfAssessedLevel | null;
   current_level_index: number;
   mastery: MasterySnapshot;
   current_room: string;
@@ -200,6 +220,13 @@ export interface GameStateObject {
 export interface GameStateSnapshot {
   interaction_schema_version: 2;
   session_id: string;
+  chapter_id: string;
+  zone_id: string;
+  view_id: string;
+  sub_view_id: string | null;
+  fsm_state: string;
+  flags: Record<string, unknown>;
+  journal_entries: Array<Record<string, unknown>>;
   game_state_version: number;
   updated_at: string;
   room_id: string;
