@@ -41,6 +41,7 @@ interface PuzzleScreenProps {
 interface ActivePuzzleModal {
   puzzleId: string;
   puzzle: NextPuzzleResponse;
+  title: string;
 }
 
 type TraceEventInput = {
@@ -73,11 +74,45 @@ const ROOM404_HOTSPOT_LABELS: Record<string, string> = {
   main_door: "Main Door",
 };
 
+const ROOM404_PUZZLE_TITLES: Record<string, string> = {
+  p_warning_sign_translate: "Warning Sign Translation",
+};
+
+const ROOM404_PUZZLE_PROMPTS: Record<string, string> = {
+  p_warning_sign_translate:
+    "The warning sign text is partially faded. Translate its key safety phrase into clear English.",
+};
+
 function toTitleLabel(id: string): string {
   return id
     .replaceAll("__", " ")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getPuzzleTitle(puzzleId: string): string {
+  return ROOM404_PUZZLE_TITLES[puzzleId] ?? toTitleLabel(puzzleId);
+}
+
+function buildFallbackPuzzleById(puzzleId: string): NextPuzzleResponse {
+  return {
+    puzzle_id: puzzleId,
+    variant_id: `${puzzleId}__fallback`,
+    skill: "vocabulary",
+    slot_order: 0,
+    difficulty_tier: "mid",
+    prompt_text:
+      ROOM404_PUZZLE_PROMPTS[puzzleId] ??
+      "Puzzle prompt is unavailable. You can still enter an answer for the next batch wiring.",
+    audio_url: null,
+    time_limit_sec: null,
+    interaction_mode: "plain",
+    interaction: null,
+    hints: ["Focus on the key warning phrase.", "Use concise natural English."],
+    max_hints_shown: 2,
+    max_attempt_chars: 120,
+    session_complete: false,
+  };
 }
 
 function toUserFacingError(
@@ -281,29 +316,41 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     void refreshSnapshot();
   }, [refreshSnapshot]);
 
+  const loadPuzzleById = React.useCallback(
+    async (puzzleId: string): Promise<NextPuzzleResponse> => {
+      // Compatibility transport: backend currently exposes next-puzzle endpoint.
+      const nextPuzzleRes = await getNextPuzzle(sessionId);
+      if (nextPuzzleRes.ok && nextPuzzleRes.data) {
+        if (nextPuzzleRes.data.puzzle_id === puzzleId) {
+          return nextPuzzleRes.data;
+        }
+      }
+      return buildFallbackPuzzleById(puzzleId);
+    },
+    [sessionId],
+  );
+
   const maybeOpenPuzzleModal = React.useCallback(
     async (orderedEffects: InteractionEffect[]) => {
       const openPuzzle = orderedEffects.find(
         (effect) => effect.type === "open_puzzle",
       );
       if (!openPuzzle?.puzzle_id) return;
-      const nextPuzzleRes = await getNextPuzzle(sessionId);
-      if (!nextPuzzleRes.ok || !nextPuzzleRes.data) {
-        setError(nextPuzzleRes.error?.message ?? "Failed to load puzzle");
-        return;
-      }
+      const puzzleId = openPuzzle.puzzle_id;
+      const puzzlePayload = await loadPuzzleById(puzzleId);
 
       resetAttemptTrace();
       setModal({
-        puzzleId: openPuzzle.puzzle_id,
-        puzzle: nextPuzzleRes.data,
+        puzzleId,
+        puzzle: puzzlePayload,
+        title: getPuzzleTitle(puzzleId),
       });
       appendTrace({
         event_type: "prompt_opened",
-        prompt_ref: openPuzzle.puzzle_id,
+        prompt_ref: puzzleId,
       });
     },
-    [appendTrace, resetAttemptTrace, sessionId],
+    [appendTrace, loadPuzzleById, resetAttemptTrace],
   );
 
   const runAction = React.useCallback(
@@ -609,8 +656,11 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         >
           <div className="w-full max-w-lg rounded-lg border border-neutral-700 bg-neutral-900 p-5">
             <h3 className="mb-2 text-lg font-semibold text-neutral-100">
-              Puzzle Opened: {modal.puzzleId}
+              {modal.title}
             </h3>
+            <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">
+              Puzzle ID: {modal.puzzleId}
+            </p>
             <p className="mb-4 text-sm text-neutral-300">
               {modal.puzzle.prompt_text}
             </p>

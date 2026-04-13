@@ -242,4 +242,47 @@ describe("PuzzleScreen", () => {
       expect(screen.queryByText("Action failed")).not.toBeInTheDocument();
     });
   });
+
+  it("opens modal using effect puzzle_id when next-puzzle transport mismatches", async () => {
+    postAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        effects: [
+          {
+            type: "open_puzzle",
+            puzzle_id: "p_warning_sign_translate",
+            target_id: "warning_sign",
+          },
+        ],
+        game_state: { ...snapshot, game_state_version: 1 },
+      },
+    });
+
+    getNextPuzzle.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        puzzle_id: "different_puzzle",
+        variant_id: "different_puzzle_mid",
+        skill: "vocabulary",
+        slot_order: 0,
+        difficulty_tier: "mid",
+        prompt_text: "Should not be used for modal identity",
+        audio_url: null,
+        time_limit_sec: null,
+        interaction_mode: "plain",
+        interaction: null,
+        session_complete: false,
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    expect(
+      await screen.findByText("Puzzle ID: p_warning_sign_translate"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Warning Sign Translation")).toBeInTheDocument();
+  });
 });

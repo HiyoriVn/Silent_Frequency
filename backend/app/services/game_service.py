@@ -51,6 +51,9 @@ _ROOM404_COMPAT_CANONICAL_TO_LEGACY_ACTION = {
     "open_sub_view": "open_object",
 }
 
+_ROOM404_WARNING_SIGN_HOTSPOT_ID = "warning_sign"
+_ROOM404_WARNING_SIGN_PUZZLE_ID = "p_warning_sign_translate"
+
 _CANONICAL_HOTSPOT_PARENT_VIEW_DEFAULTS = {
     "bedside_table": "patient_room_404__bg_01_bed_wall",
     "folded_note": "patient_room_404__sub_bedside_drawer",
@@ -92,6 +95,35 @@ def _room404_legacy_action(action: str) -> str:
 
 def _room404_object_ids_for_canonical_target(target_id: str) -> tuple[str, ...]:
     return _ROOM404_COMPAT_CANONICAL_OBJECT_IDS.get(target_id, (target_id,))
+
+
+def _canonical_action_hint(
+    *,
+    hotspot_id: str,
+    hotspot_type: str,
+    target_action: str | None,
+) -> str | None:
+    if target_action == "open_puzzle":
+        # Puzzle opening is an effect; frontend should still dispatch a canonical action.
+        return "inspect"
+
+    if target_action in {
+        "inspect",
+        "open_sub_view",
+        "collect",
+        "navigation",
+    }:
+        return target_action
+
+    if hotspot_type == "navigation":
+        return "navigation"
+    if hotspot_id == "bedside_table":
+        return "open_sub_view"
+    if hotspot_id == "folded_note":
+        return "collect"
+    if hotspot_id == _ROOM404_WARNING_SIGN_HOTSPOT_ID:
+        return "inspect"
+    return "inspect"
 
 
 def _default_room_state() -> list[dict[str, Any]]:
@@ -276,9 +308,12 @@ def _canonical_hotspots_from_template(
         if not isinstance(target_view_id, str):
             target_view_id = None
 
-        action_hint = entry.get("target_action")
-        if not isinstance(action_hint, str):
-            action_hint = None
+        raw_target_action = entry.get("target_action")
+        action_hint = _canonical_action_hint(
+            hotspot_id=hotspot_id,
+            hotspot_type=str(entry.get("type") or "interactable"),
+            target_action=raw_target_action if isinstance(raw_target_action, str) else None,
+        )
 
         hotspots.append(
             {
@@ -353,7 +388,11 @@ def _canonical_hotspots_from_legacy_state(
         )
 
         default_action = hotspot_props.get("default_action")
-        action_hint = default_action if isinstance(default_action, str) else None
+        action_hint = _canonical_action_hint(
+            hotspot_id=canonical_id,
+            hotspot_type=str(obj.get("type") or "interactable"),
+            target_action=default_action if isinstance(default_action, str) else None,
+        )
 
         target_view_id = (
             "patient_room_404__sub_bedside_drawer"
@@ -663,11 +702,17 @@ def _apply_room404_canonical_action(
 
     elif action == "inspect" and target_id == "warning_sign":
         canonical_flags["first_language_interaction_done"] = True
+        active_puzzles = state_flags.get("active_puzzles")
+        if not isinstance(active_puzzles, list):
+            active_puzzles = []
+        if _ROOM404_WARNING_SIGN_PUZZLE_ID not in active_puzzles:
+            active_puzzles.append(_ROOM404_WARNING_SIGN_PUZZLE_ID)
+        state_flags["active_puzzles"] = active_puzzles
         effects.append(
             {
                 "type": "open_puzzle",
-                "puzzle_id": "p_warning_sign_translate",
-                "target_id": "warning_sign",
+                "puzzle_id": _ROOM404_WARNING_SIGN_PUZZLE_ID,
+                "target_id": _ROOM404_WARNING_SIGN_HOTSPOT_ID,
             }
         )
 
