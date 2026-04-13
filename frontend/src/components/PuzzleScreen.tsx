@@ -122,6 +122,26 @@ function buildFallbackPuzzleById(puzzleId: string): NextPuzzleResponse {
   };
 }
 
+function mergePuzzlePayloadFromOpenEffect(
+  puzzlePayload: NextPuzzleResponse,
+  openPuzzleEffect: InteractionEffect,
+): NextPuzzleResponse {
+  return {
+    ...puzzlePayload,
+    difficulty_tier:
+      openPuzzleEffect.difficulty_tier ?? puzzlePayload.difficulty_tier,
+    prompt_text: openPuzzleEffect.prompt_text ?? puzzlePayload.prompt_text,
+    hints:
+      Array.isArray(openPuzzleEffect.hints) && openPuzzleEffect.hints.length > 0
+        ? openPuzzleEffect.hints
+        : puzzlePayload.hints,
+    max_hints_shown:
+      typeof openPuzzleEffect.max_hints_shown === "number"
+        ? openPuzzleEffect.max_hints_shown
+        : puzzlePayload.max_hints_shown,
+  };
+}
+
 function toUserFacingError(
   code?: string,
   message?: string,
@@ -347,13 +367,17 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       if (!openPuzzle?.puzzle_id) return;
       const puzzleId = openPuzzle.puzzle_id;
       const puzzlePayload = await loadPuzzleById(puzzleId);
+      const mergedPuzzlePayload = mergePuzzlePayloadFromOpenEffect(
+        puzzlePayload,
+        openPuzzle,
+      );
 
       resetAttemptTrace();
       setAttemptResult(null);
       setAttemptAnswer("");
       setModal({
         puzzleId,
-        puzzle: puzzlePayload,
+        puzzle: mergedPuzzlePayload,
         title: getPuzzleTitle(puzzleId),
       });
       appendTrace({
@@ -559,6 +583,19 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     : warningSignPuzzleActive
       ? "In progress"
       : "Not solved";
+  const adaptiveOutput = snapshot?.adaptive_output;
+  const adaptiveDifficultyTier =
+    adaptiveOutput?.difficulty_tier?.toUpperCase() ?? "UNKNOWN";
+  const adaptiveOutcome =
+    adaptiveOutput?.last_attempt_outcome === "correct"
+      ? "Correct"
+      : adaptiveOutput?.last_attempt_outcome === "incorrect"
+        ? "Incorrect"
+        : "N/A";
+  const adaptiveUpdateCount =
+    typeof adaptiveOutput?.adaptive_update_count === "number"
+      ? String(adaptiveOutput.adaptive_update_count)
+      : "N/A";
   const isSubViewOpen = Boolean(snapshot?.sub_view_id);
 
   return (
@@ -673,6 +710,17 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
           )}
         </div>
 
+        <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-800/60 p-3">
+          <h3 className="mb-2 text-xs uppercase tracking-wider text-neutral-300">
+            Adaptive Observability
+          </h3>
+          <ul className="space-y-1 text-xs text-neutral-400">
+            <li>Difficulty Tier: {adaptiveDifficultyTier}</li>
+            <li>Last Adaptive Outcome: {adaptiveOutcome}</li>
+            <li>Adaptive Update Count: {adaptiveUpdateCount}</li>
+          </ul>
+        </div>
+
         {effects.length > 0 && (
           <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-800/70 p-3">
             <h3 className="mb-2 text-xs uppercase tracking-wider text-neutral-300">
@@ -714,6 +762,9 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
             </h3>
             <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">
               Puzzle ID: {modal.puzzleId}
+            </p>
+            <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">
+              Difficulty Tier: {modal.puzzle.difficulty_tier}
             </p>
             <p className="mb-4 text-sm text-neutral-300">
               {modal.puzzle.prompt_text}

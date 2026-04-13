@@ -54,6 +54,8 @@ def test_game_state_snapshot_minimal_valid() -> None:
         room_state=[],
         inventory=[],
         active_puzzles=[],
+        adaptive_output={"difficulty_tier": "mid"},
     )
     assert snapshot.room_id == "lab1"
     assert snapshot.game_state_version == 0
+    assert snapshot.adaptive_output.difficulty_tier == "mid"

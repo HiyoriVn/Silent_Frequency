@@ -29,6 +29,31 @@ _ROOM404_DEFAULT_FLAGS = {
     "room404_exit_unlocked": False,
 }
 
+_SELF_ASSESSMENT_TO_DIFFICULTY_TIER = {
+    "beginner": "low",
+    "elementary": "low",
+    "intermediate": "mid",
+    "upper_intermediate": "high",
+}
+
+_DEFAULT_DIFFICULTY_TIER = "mid"
+
+
+def _warm_start_adaptive_state(self_assessed_level: str | None) -> dict:
+    difficulty_tier = _SELF_ASSESSMENT_TO_DIFFICULTY_TIER.get(
+        self_assessed_level,
+        _DEFAULT_DIFFICULTY_TIER,
+    )
+    warm_start_source = (
+        "self_assessed_level"
+        if self_assessed_level in _SELF_ASSESSMENT_TO_DIFFICULTY_TIER
+        else "default"
+    )
+    return {
+        "difficulty_tier": difficulty_tier,
+        "warm_start_source": warm_start_source,
+    }
+
 
 def _initial_gameplay_flags(self_assessed_level: str | None) -> dict:
     flags = dict(_ROOM404_DEFAULT_FLAGS)
@@ -41,6 +66,7 @@ def _initial_gameplay_flags(self_assessed_level: str | None) -> dict:
         "view_id": "patient_room_404__bg_01_bed_wall",
         "sub_view_id": None,
         "fsm_state": "room404_idle",
+        "adaptive_state": _warm_start_adaptive_state(self_assessed_level),
         "flags": flags,
         "journal_entries": [],
     }
@@ -117,6 +143,11 @@ async def create_session(
             "condition": session.condition,
             "mode": session.mode,
             "self_assessed_level": self_assessed_level,
+            "adaptive_state": (
+                game_state_flags.get("adaptive_state")
+                if mode == "gameplay_v2"
+                else None
+            ),
             "current_level_index": session.current_level_index,
         },
     ))

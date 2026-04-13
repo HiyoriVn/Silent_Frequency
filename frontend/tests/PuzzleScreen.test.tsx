@@ -52,6 +52,9 @@ describe("PuzzleScreen", () => {
       },
     ],
     active_puzzles: [],
+    adaptive_output: {
+      difficulty_tier: "mid",
+    },
     hint_policy: null,
   };
 
@@ -354,5 +357,107 @@ describe("PuzzleScreen", () => {
     expect(screen.getByText("Main Door: Unlocked")).toBeInTheDocument();
     expect(screen.getByText("Language Interaction: Done")).toBeInTheDocument();
     expect(screen.getByText("Folded Note: Collected")).toBeInTheDocument();
+  });
+
+  it("shows adaptive observability from backend adaptive_output", async () => {
+    getGameState.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        game_state: {
+          ...snapshot,
+          adaptive_output: {
+            difficulty_tier: "high",
+            last_attempt_outcome: "incorrect",
+            adaptive_update_count: 3,
+          },
+        },
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    expect(
+      await screen.findByText("Adaptive Observability"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Difficulty Tier: HIGH")).toBeInTheDocument();
+    expect(
+      screen.getByText("Last Adaptive Outcome: Incorrect"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Adaptive Update Count: 3")).toBeInTheDocument();
+  });
+
+  it("shows adaptive observability fallbacks when outcome/count are unavailable", async () => {
+    getGameState.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        game_state: {
+          ...snapshot,
+          adaptive_output: {
+            difficulty_tier: "mid",
+          },
+        },
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    expect(
+      await screen.findByText("Adaptive Observability"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Difficulty Tier: MID")).toBeInTheDocument();
+    expect(screen.getByText("Last Adaptive Outcome: N/A")).toBeInTheDocument();
+    expect(screen.getByText("Adaptive Update Count: N/A")).toBeInTheDocument();
+  });
+
+  it("uses backend tier-driven open_puzzle payload for modal prompt", async () => {
+    postAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        effects: [
+          {
+            type: "open_puzzle",
+            puzzle_id: "p_warning_sign_translate",
+            target_id: "warning_sign",
+            difficulty_tier: "high",
+            prompt_text:
+              "Translate the warning sign's exact safety phrase into concise English.",
+            hints: ["Use the exact restricted-access phrasing."],
+            max_hints_shown: 1,
+          },
+        ],
+        game_state: { ...snapshot, game_state_version: 1 },
+      },
+    });
+
+    getNextPuzzle.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        puzzle_id: "different_puzzle",
+        variant_id: "different_puzzle_mid",
+        skill: "vocabulary",
+        slot_order: 0,
+        difficulty_tier: "mid",
+        prompt_text: "Transport prompt should be overridden by open_puzzle.",
+        audio_url: null,
+        time_limit_sec: null,
+        interaction_mode: "plain",
+        interaction: null,
+        session_complete: false,
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    expect(
+      await screen.findByText("Difficulty Tier: high"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Translate the warning sign's exact safety phrase into concise English.",
+      ),
+    ).toBeInTheDocument();
   });
 });

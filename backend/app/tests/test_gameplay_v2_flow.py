@@ -171,3 +171,71 @@ async def test_v2_data_driven_resolver_flow(seeded: AsyncClient) -> None:
         events_result = await db.execute(select(EventLog))
         events = events_result.scalars().all()
     assert len(events) >= 3
+
+
+@pytest.mark.asyncio
+async def test_v2_warm_start_adaptive_state_maps_self_assessed_level(
+    seeded: AsyncClient,
+) -> None:
+    expected_by_level = {
+        "beginner": "low",
+        "elementary": "low",
+        "intermediate": "mid",
+        "upper_intermediate": "high",
+    }
+
+    for level, expected_tier in expected_by_level.items():
+        create_res = await seeded.post(
+            "/api/sessions",
+            json={
+                "display_name": f"warm-start-{level}",
+                "condition": "adaptive",
+                "mode": "gameplay_v2",
+                "self_assessed_level": level,
+            },
+        )
+        assert create_res.status_code == 200
+        session_id = create_res.json()["data"]["session_id"]
+
+        state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+        assert state_res.status_code == 200
+        game_state = state_res.json()["data"]["game_state"]
+        adaptive_state = game_state.get("adaptive_state")
+        adaptive_output = game_state.get("adaptive_output")
+
+        assert isinstance(adaptive_state, dict)
+        assert isinstance(adaptive_output, dict)
+        assert adaptive_output["difficulty_tier"] == expected_tier
+        assert adaptive_output["warm_start_source"] == "self_assessed_level"
+        assert adaptive_state["difficulty_tier"] == expected_tier
+        assert adaptive_state["warm_start_source"] == "self_assessed_level"
+        assert game_state["flags"]["self_assessed_level"] == level
+
+
+@pytest.mark.asyncio
+async def test_v2_warm_start_adaptive_state_defaults_to_mid_without_self_assessment(
+    seeded: AsyncClient,
+) -> None:
+    create_res = await seeded.post(
+        "/api/sessions",
+        json={
+            "display_name": "warm-start-default",
+            "condition": "adaptive",
+            "mode": "gameplay_v2",
+        },
+    )
+    assert create_res.status_code == 200
+    session_id = create_res.json()["data"]["session_id"]
+
+    state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert state_res.status_code == 200
+    game_state = state_res.json()["data"]["game_state"]
+    adaptive_state = game_state.get("adaptive_state")
+    adaptive_output = game_state.get("adaptive_output")
+
+    assert isinstance(adaptive_state, dict)
+    assert isinstance(adaptive_output, dict)
+    assert adaptive_output["difficulty_tier"] == "mid"
+    assert adaptive_output["warm_start_source"] == "default"
+    assert adaptive_state["difficulty_tier"] == "mid"
+    assert adaptive_state["warm_start_source"] == "default"

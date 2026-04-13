@@ -252,6 +252,18 @@ export interface GameStateSnapshot {
   room_state: GameStateObject[];
   inventory: Item[];
   active_puzzles: string[];
+  adaptive_output: {
+    difficulty_tier: DifficultyTier;
+    warm_start_source?: "self_assessed_level" | "default";
+    last_attempt_outcome?: "correct" | "incorrect";
+    adaptive_update_count?: number;
+  };
+  adaptive_state?: {
+    difficulty_tier: DifficultyTier;
+    warm_start_source?: "self_assessed_level" | "default";
+    last_attempt_outcome?: "correct" | "incorrect";
+    adaptive_update_count?: number;
+  } | null;
   hint_policy?: {
     idle_seconds?: number;
     failed_attempts_threshold?: number;
@@ -265,6 +277,10 @@ export interface InteractionEffect {
   puzzle_id?: string | null;
   dialogue_id?: string | null;
   dialogue_text?: string | null;
+  difficulty_tier?: DifficultyTier;
+  prompt_text?: string | null;
+  hints?: string[] | null;
+  max_hints_shown?: number | null;
 }
 
 export interface InteractionHotspot {

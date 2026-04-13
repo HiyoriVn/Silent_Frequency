@@ -59,6 +59,8 @@ ROOM404_WARNING_SIGN_ACCEPTED_ANSWERS = [
     "chi nguoi duoc uy quyen",
 ]
 
+_ADAPTIVE_TIER_ORDER = {"low", "mid", "high"}
+
 
 def _extract_interaction_payload(variant: PuzzleVariant) -> dict | None:
     metadata = variant.metadata_ or {}
@@ -237,6 +239,70 @@ def _merge_accepted_answers(base: list[str], extras: list[str]) -> list[str]:
         if answer not in merged:
             merged.append(answer)
     return merged
+
+
+def _normalise_difficulty_tier(value: str | None) -> str:
+    if value in _ADAPTIVE_TIER_ORDER:
+        return value
+    return "mid"
+
+
+def _next_room404_difficulty_tier(current_tier: str, is_correct: bool) -> str:
+    current = _normalise_difficulty_tier(current_tier)
+    if is_correct:
+        return current
+    if current == "high":
+        return "mid"
+    if current == "mid":
+        return "low"
+    return "low"
+
+
+async def _apply_room404_adaptive_update_after_attempt(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    canonical_puzzle_id: str,
+    is_correct: bool,
+    bump_version: bool,
+) -> dict[str, str | int] | None:
+    if canonical_puzzle_id != ROOM404_WARNING_SIGN_PUZZLE_ID:
+        return None
+
+    state = await db.get(GameState, session_id)
+    if state is None:
+        raise ValueError(f"Game state for session={session_id} not found")
+
+    state_flags = copy.deepcopy(state.flags) if isinstance(state.flags, dict) else {}
+    adaptive_state = state_flags.get("adaptive_state")
+    if not isinstance(adaptive_state, dict):
+        adaptive_state = {
+            "difficulty_tier": "mid",
+            "warm_start_source": "default",
+        }
+
+    before_tier = _normalise_difficulty_tier(str(adaptive_state.get("difficulty_tier")))
+    after_tier = _next_room404_difficulty_tier(before_tier, is_correct)
+    previous_count = adaptive_state.get("adaptive_update_count")
+    if not isinstance(previous_count, int) or previous_count < 0:
+        previous_count = 0
+
+    adaptive_state["difficulty_tier"] = after_tier
+    adaptive_state["last_attempt_outcome"] = "correct" if is_correct else "incorrect"
+    adaptive_state["adaptive_update_count"] = previous_count + 1
+    state_flags["adaptive_state"] = adaptive_state
+
+    state.flags = state_flags
+    if bump_version:
+        state.game_state_version += 1
+        state.updated_at = datetime.now(timezone.utc)
+
+    return {
+        "difficulty_tier_before": before_tier,
+        "difficulty_tier_after": after_tier,
+        "last_attempt_outcome": adaptive_state["last_attempt_outcome"],
+        "adaptive_update_count": adaptive_state["adaptive_update_count"],
+    }
 
 
 async def _apply_room404_progression_on_success(
@@ -448,6 +514,27 @@ async def submit_attempt(
                 "first_language_interaction_done": True,
                 "room404_exit_unlocked": True,
                 "active_puzzles_cleared": True,
+            },
+        ))
+
+    adaptive_update = await _apply_room404_adaptive_update_after_attempt(
+        db,
+        session_id=session_id,
+        canonical_puzzle_id=canonical_puzzle_id,
+        is_correct=is_correct,
+        bump_version=not progression_applied,
+    )
+    if adaptive_update is not None:
+        db.add(EventLog(
+            session_id=session_id,
+            event_type="room404_adaptive_state_updated",
+            payload={
+                "puzzle_id": canonical_puzzle_id,
+                "is_correct": is_correct,
+                "difficulty_tier_before": adaptive_update["difficulty_tier_before"],
+                "difficulty_tier_after": adaptive_update["difficulty_tier_after"],
+                "last_attempt_outcome": adaptive_update["last_attempt_outcome"],
+                "adaptive_update_count": adaptive_update["adaptive_update_count"],
             },
         ))
 

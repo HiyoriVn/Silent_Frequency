@@ -131,6 +131,24 @@ class HintPolicy(BaseModel):
     failed_attempts_threshold: int | None = Field(default=None, ge=0)
 
 
+class AdaptiveStateSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    difficulty_tier: Literal["low", "mid", "high"]
+    warm_start_source: Literal["self_assessed_level", "default"] | None = None
+    last_attempt_outcome: Literal["correct", "incorrect"] | None = None
+    adaptive_update_count: int | None = Field(default=None, ge=0)
+
+
+class AdaptiveOutputSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    difficulty_tier: Literal["low", "mid", "high"]
+    warm_start_source: Literal["self_assessed_level", "default"] | None = None
+    last_attempt_outcome: Literal["correct", "incorrect"] | None = None
+    adaptive_update_count: int | None = Field(default=None, ge=0)
+
+
 class CanonicalHotspotSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -163,6 +181,8 @@ class GameStateSnapshot(BaseModel):
     room_state: list[GameStateObject] = Field(default_factory=list)
     inventory: list[GameStateInventoryItem] = Field(default_factory=list)
     active_puzzles: list[str] = Field(default_factory=list)
+    adaptive_output: AdaptiveOutputSnapshot
+    adaptive_state: AdaptiveStateSnapshot | None = None
     hint_policy: HintPolicy | None = None
 
 
@@ -174,6 +194,10 @@ class ActionEffect(BaseModel):
     item_id: str | None = None
     puzzle_id: str | None = None
     dialogue_id: str | None = None
+    difficulty_tier: Literal["low", "mid", "high"] | None = None
+    prompt_text: str | None = None
+    hints: list[str] | None = None
+    max_hints_shown: int | None = Field(default=None, ge=0)
 
 
 class InteractionTrace(BaseModel):

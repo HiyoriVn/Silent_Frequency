@@ -240,6 +240,14 @@ async def test_warning_sign_attempt_evaluates_by_canonical_puzzle_id(seeded: Asy
     wrong_flags = wrong_state.get("flags", {})
     assert wrong_flags.get("room404_exit_unlocked") is False
     assert wrong_flags.get("first_language_interaction_done") is False
+    wrong_adaptive = wrong_state.get("adaptive_state") or {}
+    wrong_output = wrong_state.get("adaptive_output") or {}
+    assert wrong_output.get("difficulty_tier") == "low"
+    assert wrong_output.get("last_attempt_outcome") == "incorrect"
+    assert wrong_output.get("adaptive_update_count") == 1
+    assert wrong_adaptive.get("difficulty_tier") == "low"
+    assert wrong_adaptive.get("last_attempt_outcome") == "incorrect"
+    assert wrong_adaptive.get("adaptive_update_count") == 1
 
     correct_res = await seeded.post(
         f"/api/sessions/{session_id}/attempts",
@@ -264,6 +272,14 @@ async def test_warning_sign_attempt_evaluates_by_canonical_puzzle_id(seeded: Asy
     assert solved_flags.get("first_language_interaction_done") is True
     assert solved_flags.get("room404_exit_unlocked") is True
     assert "p_warning_sign_translate" not in (solved_state.get("active_puzzles") or [])
+    solved_adaptive = solved_state.get("adaptive_state") or {}
+    solved_output = solved_state.get("adaptive_output") or {}
+    assert solved_output.get("difficulty_tier") == "low"
+    assert solved_output.get("last_attempt_outcome") == "correct"
+    assert solved_output.get("adaptive_update_count") == 2
+    assert solved_adaptive.get("difficulty_tier") == "low"
+    assert solved_adaptive.get("last_attempt_outcome") == "correct"
+    assert solved_adaptive.get("adaptive_update_count") == 2
 
     main_door_res = await seeded.post(
         f"/api/sessions/{session_id}/action",
@@ -282,3 +298,122 @@ async def test_warning_sign_attempt_evaluates_by_canonical_puzzle_id(seeded: Asy
         if e.get("type") == "show_dialogue"
     ]
     assert "room404_door_unlocked" in dialogues
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "self_assessed_level,answer,expected_tier,expected_outcome",
+    [
+        ("beginner", "totally wrong answer", "low", "incorrect"),
+        ("upper_intermediate", "totally wrong answer", "mid", "incorrect"),
+        ("upper_intermediate", "authorized personnel only", "high", "correct"),
+    ],
+)
+async def test_warning_sign_attempt_updates_adaptive_state_deterministically(
+    seeded: AsyncClient,
+    self_assessed_level: str,
+    answer: str,
+    expected_tier: str,
+    expected_outcome: str,
+) -> None:
+    create_res = await seeded.post(
+        "/api/sessions",
+        json={
+            "display_name": f"adaptive-{self_assessed_level}-{expected_outcome}",
+            "condition": "adaptive",
+            "mode": "gameplay_v2",
+            "self_assessed_level": self_assessed_level,
+        },
+    )
+    assert create_res.status_code == 200
+    session_id = create_res.json()["data"]["session_id"]
+
+    submit_res = await seeded.post(
+        f"/api/sessions/{session_id}/attempts",
+        json={
+            "puzzle_id": "p_warning_sign_translate",
+            "variant_id": "p_warning_sign_translate__fallback",
+            "answer": answer,
+            "response_time_ms": 500,
+            "hint_count_used": 0,
+            "metadata": {"source": "gameplay_v2"},
+        },
+    )
+    assert submit_res.status_code == 200
+
+    state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert state_res.status_code == 200
+    game_state = state_res.json()["data"]["game_state"]
+    adaptive_state = game_state.get("adaptive_state") or {}
+    adaptive_output = game_state.get("adaptive_output") or {}
+    assert adaptive_output.get("difficulty_tier") == expected_tier
+    assert adaptive_output.get("last_attempt_outcome") == expected_outcome
+    assert adaptive_output.get("adaptive_update_count") == 1
+    assert adaptive_state.get("difficulty_tier") == expected_tier
+    assert adaptive_state.get("last_attempt_outcome") == expected_outcome
+    assert adaptive_state.get("adaptive_update_count") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "self_assessed_level,expected_tier,expected_prompt",
+    [
+        (
+            "beginner",
+            "low",
+            "Support mode: the warning sign phrase is faded. Translate it into clear English.",
+        ),
+        (
+            "intermediate",
+            "mid",
+            "The warning sign text is partially faded. Translate its key safety phrase into clear English.",
+        ),
+        (
+            "upper_intermediate",
+            "high",
+            "Translate the warning sign's exact safety phrase into concise English.",
+        ),
+    ],
+)
+async def test_warning_sign_open_puzzle_effect_reflects_adaptive_difficulty_tier(
+    seeded: AsyncClient,
+    self_assessed_level: str,
+    expected_tier: str,
+    expected_prompt: str,
+) -> None:
+    create_res = await seeded.post(
+        "/api/sessions",
+        json={
+            "display_name": f"tier-open-{self_assessed_level}",
+            "condition": "adaptive",
+            "mode": "gameplay_v2",
+            "self_assessed_level": self_assessed_level,
+        },
+    )
+    assert create_res.status_code == 200
+    session_id = create_res.json()["data"]["session_id"]
+
+    state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert state_res.status_code == 200
+    version = state_res.json()["data"]["game_state"]["game_state_version"]
+
+    action_res = await seeded.post(
+        f"/api/sessions/{session_id}/action",
+        json={
+            "interaction_schema_version": 2,
+            "action": "inspect",
+            "target_id": "warning_sign",
+            "game_state_version": version,
+            "client_action_id": str(uuid.uuid4()),
+        },
+    )
+    assert action_res.status_code == 200
+    body = action_res.json()
+    open_effect = next(
+        (effect for effect in body["data"]["effects"] if effect.get("type") == "open_puzzle"),
+        None,
+    )
+    assert open_effect is not None
+    assert open_effect["puzzle_id"] == "p_warning_sign_translate"
+    assert open_effect["difficulty_tier"] == expected_tier
+    assert open_effect["prompt_text"] == expected_prompt

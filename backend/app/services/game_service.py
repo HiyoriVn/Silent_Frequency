@@ -54,6 +54,32 @@ _ROOM404_COMPAT_CANONICAL_TO_LEGACY_ACTION = {
 _ROOM404_WARNING_SIGN_HOTSPOT_ID = "warning_sign"
 _ROOM404_WARNING_SIGN_PUZZLE_ID = "p_warning_sign_translate"
 
+_ROOM404_WARNING_SIGN_CONTENT_BY_TIER: dict[str, dict[str, Any]] = {
+    "low": {
+        "prompt_text": "Support mode: the warning sign phrase is faded. Translate it into clear English.",
+        "hints": [
+            "The phrase warns that access is restricted.",
+            "Use a short safety sign sentence.",
+        ],
+        "max_hints_shown": 3,
+    },
+    "mid": {
+        "prompt_text": "The warning sign text is partially faded. Translate its key safety phrase into clear English.",
+        "hints": [
+            "Focus on the key warning phrase.",
+            "Use concise natural English.",
+        ],
+        "max_hints_shown": 2,
+    },
+    "high": {
+        "prompt_text": "Translate the warning sign's exact safety phrase into concise English.",
+        "hints": [
+            "Use the exact restricted-access phrasing.",
+        ],
+        "max_hints_shown": 1,
+    },
+}
+
 _CANONICAL_HOTSPOT_PARENT_VIEW_DEFAULTS = {
     "bedside_table": "patient_room_404__bg_01_bed_wall",
     "folded_note": "patient_room_404__sub_bedside_drawer",
@@ -482,6 +508,8 @@ def _build_snapshot(
     state_flags = state.flags if isinstance(state.flags, dict) else {}
     room_state = state_flags.get("room_state") if isinstance(state_flags, dict) else None
     active_puzzles = state_flags.get("active_puzzles") if isinstance(state_flags, dict) else None
+    adaptive_state = state_flags.get("adaptive_state") if isinstance(state_flags, dict) else None
+    adaptive_output = _adaptive_output_from_state(adaptive_state)
 
     canonical_flags = state_flags.get("flags") if isinstance(state_flags.get("flags"), dict) else {}
     if not canonical_flags and state_flags.get("self_assessed_level") is not None:
@@ -502,6 +530,8 @@ def _build_snapshot(
         room_state = template_payload.get("objects", _default_room_state())
     if active_puzzles is None:
         active_puzzles = []
+    if not isinstance(adaptive_state, dict):
+        adaptive_state = None
 
     hotspots = _canonical_hotspots_from_template(
         template_payload=template_payload,
@@ -537,8 +567,46 @@ def _build_snapshot(
         "room_state": room_state,
         "inventory": inventory,
         "active_puzzles": active_puzzles,
+        "adaptive_output": adaptive_output,
+        "adaptive_state": adaptive_state,
         "hint_policy": template_payload.get("hint_policy"),
     }
+
+
+def _adaptive_output_from_state(adaptive_state: Any) -> dict[str, Any]:
+    if not isinstance(adaptive_state, dict):
+        return {"difficulty_tier": "mid"}
+
+    raw_tier = adaptive_state.get("difficulty_tier")
+    if raw_tier in {"low", "mid", "high"}:
+        difficulty_tier = raw_tier
+    else:
+        difficulty_tier = "mid"
+
+    output: dict[str, Any] = {
+        "difficulty_tier": difficulty_tier,
+    }
+
+    warm_start_source = adaptive_state.get("warm_start_source")
+    if warm_start_source in {"self_assessed_level", "default"}:
+        output["warm_start_source"] = warm_start_source
+
+    last_attempt_outcome = adaptive_state.get("last_attempt_outcome")
+    if last_attempt_outcome in {"correct", "incorrect"}:
+        output["last_attempt_outcome"] = last_attempt_outcome
+
+    adaptive_update_count = adaptive_state.get("adaptive_update_count")
+    if isinstance(adaptive_update_count, int) and adaptive_update_count >= 0:
+        output["adaptive_update_count"] = adaptive_update_count
+
+    return output
+
+
+def _room404_warning_sign_content_for_tier(difficulty_tier: str) -> dict[str, Any]:
+    return _ROOM404_WARNING_SIGN_CONTENT_BY_TIER.get(
+        difficulty_tier,
+        _ROOM404_WARNING_SIGN_CONTENT_BY_TIER["mid"],
+    )
 
 
 async def get_game_state(db: AsyncSession, session_id: uuid.UUID) -> dict[str, Any]:
@@ -708,11 +776,18 @@ def _apply_room404_canonical_action(
         if _ROOM404_WARNING_SIGN_PUZZLE_ID not in active_puzzles:
             active_puzzles.append(_ROOM404_WARNING_SIGN_PUZZLE_ID)
         state_flags["active_puzzles"] = active_puzzles
+        adaptive_output = _adaptive_output_from_state(state_flags.get("adaptive_state"))
+        difficulty_tier = str(adaptive_output.get("difficulty_tier") or "mid")
+        warning_sign_content = _room404_warning_sign_content_for_tier(difficulty_tier)
         effects.append(
             {
                 "type": "open_puzzle",
                 "puzzle_id": _ROOM404_WARNING_SIGN_PUZZLE_ID,
                 "target_id": _ROOM404_WARNING_SIGN_HOTSPOT_ID,
+                "difficulty_tier": difficulty_tier,
+                "prompt_text": warning_sign_content["prompt_text"],
+                "hints": list(warning_sign_content["hints"]),
+                "max_hints_shown": warning_sign_content["max_hints_shown"],
             }
         )
 
