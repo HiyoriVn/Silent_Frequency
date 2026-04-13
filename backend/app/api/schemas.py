@@ -131,6 +131,18 @@ class HintPolicy(BaseModel):
     failed_attempts_threshold: int | None = Field(default=None, ge=0)
 
 
+class CanonicalHotspotSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    type: str
+    parent_view_id: str
+    visible: bool
+    clickable: bool
+    target_view_id: str | None = None
+    action_hint: str | None = None
+
+
 class GameStateSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -139,10 +151,12 @@ class GameStateSnapshot(BaseModel):
     chapter_id: str = "chapter_1"
     zone_id: str = "patient_room_404"
     view_id: str = "patient_room_404__bg_01_bed_wall"
+    current_background_view_id: str = "patient_room_404__bg_01_bed_wall"
     sub_view_id: str | None = None
     fsm_state: str = "room404_idle"
     flags: dict[str, Any] = Field(default_factory=dict)
     journal_entries: list[dict[str, Any]] = Field(default_factory=list)
+    hotspots: list[CanonicalHotspotSnapshot] = Field(default_factory=list)
     game_state_version: int = Field(ge=0)
     updated_at: datetime
     room_id: str
@@ -175,10 +189,23 @@ class InteractionTrace(BaseModel):
 
 
 class ActionRequest(BaseModel):
+    """Room 404 frontend flows should send canonical action + target_id values.
+
+    Legacy values remain temporarily accepted through backend-only compatibility mapping.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     interaction_schema_version: int
-    action: Literal["use_item", "inspect", "take_item", "open_object"]
+    action: Literal[
+        "use_item",
+        "inspect",
+        "take_item",
+        "open_object",
+        "open_sub_view",
+        "collect",
+        "navigation",
+    ]
     target_id: str = Field(min_length=1)
     item_id: str | None = None
     client_action_id: uuid.UUID | None = None

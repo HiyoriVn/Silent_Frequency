@@ -10,7 +10,16 @@ type SceneHotspot = {
   w: number;
   h: number;
   target_id: string;
+  action?:
+    | "use_item"
+    | "inspect"
+    | "take_item"
+    | "open_object"
+    | "open_sub_view"
+    | "collect"
+    | "navigation";
   default_action?: "use_item" | "inspect" | "take_item" | "open_object";
+  clickable?: boolean;
 };
 
 interface SceneRendererProps {
@@ -44,6 +53,9 @@ export default function SceneRenderer({
 
         {hotspots.map((hotspot) => {
           const isActive = hotspot.id === activeHotspotId;
+          const resolvedAction =
+            hotspot.action ?? hotspot.default_action ?? "inspect";
+          const canClick = hotspot.clickable ?? true;
 
           return (
             <button
@@ -51,6 +63,7 @@ export default function SceneRenderer({
               type="button"
               aria-label={hotspot.label}
               onClick={() => onHotspotClicked(hotspot)}
+              disabled={!canClick && resolvedAction !== "navigation"}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
@@ -60,7 +73,9 @@ export default function SceneRenderer({
               className={`absolute border text-[10px] font-mono uppercase tracking-wider transition ${
                 isActive
                   ? "border-cyan-300 bg-cyan-500/20 text-cyan-100"
-                  : "border-cyan-600/80 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+                  : canClick || resolvedAction === "navigation"
+                    ? "border-cyan-600/80 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20"
+                    : "cursor-not-allowed border-neutral-700 bg-neutral-800/40 text-neutral-500"
               }`}
               style={{
                 left: `${hotspot.x * 100}%`,

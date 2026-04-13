@@ -12,6 +12,7 @@ import {
   submitAttempt,
 } from "@/lib/api";
 import type {
+  InteractionAction,
   GameStateObject,
   InteractionTrace,
   GameStateSnapshot,
@@ -28,7 +29,9 @@ type SceneHotspot = {
   w: number;
   h: number;
   target_id: string;
+  action?: InteractionAction;
   default_action?: "use_item" | "inspect" | "take_item" | "open_object";
+  clickable?: boolean;
 };
 
 interface PuzzleScreenProps {
@@ -46,6 +49,36 @@ type TraceEventInput = {
   prompt_ref?: string;
   hint_id?: string;
 };
+
+const ROOM404_VIEW_ASSET_KEYS: Record<string, string> = {
+  patient_room_404__bg_01_bed_wall: "placeholder_room404_bed_wall",
+  patient_room_404__bg_04_door_side: "placeholder_room404_door_side",
+  patient_room_404__sub_bedside_drawer: "placeholder_room404_bedside_drawer",
+};
+
+const ROOM404_HOTSPOT_LAYOUTS: Record<
+  string,
+  { x: number; y: number; w: number; h: number }
+> = {
+  bedside_table: { x: 0.6, y: 0.5, w: 0.24, h: 0.26 },
+  folded_note: { x: 0.34, y: 0.24, w: 0.22, h: 0.2 },
+  warning_sign: { x: 0.2, y: 0.26, w: 0.22, h: 0.24 },
+  main_door: { x: 0.74, y: 0.15, w: 0.2, h: 0.7 },
+};
+
+const ROOM404_HOTSPOT_LABELS: Record<string, string> = {
+  bedside_table: "Bedside Table",
+  folded_note: "Folded Note",
+  warning_sign: "Warning Sign",
+  main_door: "Main Door",
+};
+
+function toTitleLabel(id: string): string {
+  return id
+    .replaceAll("__", " ")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 function toUserFacingError(
   code?: string,
@@ -86,6 +119,14 @@ function extractHotspots(objects: GameStateObject[]): SceneHotspot[] {
         ? hotspot.default_action
         : undefined;
 
+    const normalizedAction: InteractionAction =
+      defaultAction === "use_item" ||
+      defaultAction === "inspect" ||
+      defaultAction === "take_item" ||
+      defaultAction === "open_object"
+        ? defaultAction
+        : "inspect";
+
     hotspots.push({
       id: obj.id,
       label,
@@ -94,11 +135,73 @@ function extractHotspots(objects: GameStateObject[]): SceneHotspot[] {
       w,
       h,
       target_id: obj.id,
-      default_action: defaultAction as SceneHotspot["default_action"],
+      action: normalizedAction,
+      clickable: true,
     });
   }
 
   return hotspots;
+}
+
+function resolveCanonicalHotspotAction(
+  actionHint: string | null | undefined,
+  type: string,
+): InteractionAction {
+  if (actionHint === "open_sub_view") return "open_sub_view";
+  if (actionHint === "collect") return "collect";
+  if (actionHint === "navigation") return "navigation";
+  if (actionHint === "open_puzzle") return "inspect";
+  if (actionHint === "inspect") return "inspect";
+  if (type === "navigation") return "navigation";
+  return "inspect";
+}
+
+function normalizeInteractionAction(
+  action: string | null | undefined,
+): InteractionAction {
+  if (action === "use_item") return "use_item";
+  if (action === "inspect") return "inspect";
+  if (action === "take_item") return "take_item";
+  if (action === "open_object") return "open_object";
+  if (action === "open_sub_view") return "open_sub_view";
+  if (action === "collect") return "collect";
+  if (action === "navigation") return "navigation";
+  return "inspect";
+}
+
+function extractCanonicalRoom404Hotspots(
+  snapshot: GameStateSnapshot,
+): SceneHotspot[] {
+  if (!Array.isArray(snapshot.hotspots) || snapshot.hotspots.length === 0) {
+    // Compatibility fallback for non-canonical snapshots/tests only.
+    return extractHotspots(snapshot.room_state ?? []);
+  }
+
+  return snapshot.hotspots
+    .filter((hotspot) => hotspot.visible)
+    .map((hotspot) => {
+      const layout = ROOM404_HOTSPOT_LAYOUTS[hotspot.id] ?? {
+        x: 0.08,
+        y: 0.08,
+        w: 0.2,
+        h: 0.2,
+      };
+
+      return {
+        id: hotspot.id,
+        label: ROOM404_HOTSPOT_LABELS[hotspot.id] ?? toTitleLabel(hotspot.id),
+        x: layout.x,
+        y: layout.y,
+        w: layout.w,
+        h: layout.h,
+        target_id: hotspot.id,
+        action: resolveCanonicalHotspotAction(
+          hotspot.action_hint,
+          hotspot.type,
+        ),
+        clickable: Boolean(hotspot.clickable),
+      };
+    });
 }
 
 export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
@@ -205,7 +308,7 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
 
   const runAction = React.useCallback(
     async (payload: {
-      action: "use_item" | "inspect" | "take_item" | "open_object";
+      action: InteractionAction;
       target_id: string;
       item_id?: string;
     }) => {
@@ -280,6 +383,15 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     setActiveHotspotId(hotspot.id);
     appendTrace({ event_type: "hotspot_clicked", hotspot_id: hotspot.id });
 
+    const resolvedAction = normalizeInteractionAction(
+      hotspot.action ?? hotspot.default_action,
+    );
+    const canClick = hotspot.clickable ?? true;
+
+    if (!canClick && resolvedAction !== "navigation") {
+      return;
+    }
+
     if (selectedItemId) {
       await runAction({
         action: "use_item",
@@ -290,13 +402,12 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       return;
     }
 
-    const action = hotspot.default_action ?? "inspect";
-    if (action === "inspect") {
+    if (resolvedAction === "inspect") {
       appendTrace({ event_type: "prompt_opened", hotspot_id: hotspot.id });
     }
 
     await runAction({
-      action,
+      action: resolvedAction,
       target_id: hotspot.target_id,
     });
   };
@@ -354,13 +465,15 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     await refreshSnapshot();
   };
 
-  const hotspots = snapshot ? extractHotspots(snapshot.room_state) : [];
-  const assetKey = (() => {
-    if (!snapshot) return "lab1-desk";
-    const first = snapshot.room_state[0];
-    const value = first?.properties?.asset_key;
-    return typeof value === "string" ? value : "lab1-desk";
-  })();
+  const hotspots = snapshot ? extractCanonicalRoom404Hotspots(snapshot) : [];
+  const activeViewId = snapshot
+    ? (snapshot.sub_view_id ??
+      snapshot.current_background_view_id ??
+      snapshot.view_id)
+    : "patient_room_404__bg_01_bed_wall";
+  const assetKey = ROOM404_VIEW_ASSET_KEYS[activeViewId] ?? activeViewId;
+  const foldedNoteCollected = Boolean(snapshot?.flags?.bedside_note_collected);
+  const isSubViewOpen = Boolean(snapshot?.sub_view_id);
 
   return (
     <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
@@ -368,6 +481,55 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         <h2 className="mb-3 text-sm uppercase tracking-wider text-neutral-400">
           Gameplay v2 Room: {snapshot?.room_id ?? "..."}
         </h2>
+        <p className="mb-2 text-xs text-neutral-500">View: {activeViewId}</p>
+
+        {!isSubViewOpen && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                void runAction({
+                  action: "navigation",
+                  target_id: "patient_room_404__bg_01_bed_wall",
+                })
+              }
+              className="rounded border border-neutral-600 px-2 py-1 text-xs text-neutral-300"
+            >
+              Bed Wall View
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void runAction({
+                  action: "navigation",
+                  target_id: "patient_room_404__bg_04_door_side",
+                })
+              }
+              className="rounded border border-neutral-600 px-2 py-1 text-xs text-neutral-300"
+            >
+              Door Side View
+            </button>
+          </div>
+        )}
+
+        {isSubViewOpen && (
+          <div className="mb-3">
+            <button
+              type="button"
+              onClick={() =>
+                void runAction({
+                  action: "navigation",
+                  target_id:
+                    snapshot?.current_background_view_id ??
+                    "patient_room_404__bg_01_bed_wall",
+                })
+              }
+              className="rounded border border-neutral-600 px-2 py-1 text-xs text-neutral-300"
+            >
+              Back To Main View
+            </button>
+          </div>
+        )}
 
         {loading && (
           <p className="mb-3 text-sm text-neutral-500">Syncing state...</p>
@@ -400,6 +562,9 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
 
         <div className="mt-4 space-y-2 text-xs text-neutral-400">
           <p>State Version: {snapshot?.game_state_version ?? 0}</p>
+          <p>
+            Folded note: {foldedNoteCollected ? "Collected" : "Not collected"}
+          </p>
           {selectedItemId && (
             <p className="text-cyan-300">
               Selected item: {selectedItemId}. Click a hotspot target to use it.

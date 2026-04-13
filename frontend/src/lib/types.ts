@@ -196,11 +196,16 @@ export interface InteractionTrace {
 
 // ── Gameplay v2 interaction schema ─────────────────────
 
+// Room 404 frontend flows should use canonical actions + canonical hotspot IDs.
+// Legacy action names are kept in the union only for temporary compatibility.
 export type InteractionAction =
   | "use_item"
   | "inspect"
   | "take_item"
-  | "open_object";
+  | "open_object"
+  | "open_sub_view"
+  | "collect"
+  | "navigation";
 
 export interface Item {
   id: string;
@@ -217,16 +222,28 @@ export interface GameStateObject {
   properties: Record<string, unknown>;
 }
 
+export interface CanonicalHotspotSnapshot {
+  id: string;
+  type: string;
+  parent_view_id: string;
+  visible: boolean;
+  clickable: boolean;
+  target_view_id?: string | null;
+  action_hint?: string | null;
+}
+
 export interface GameStateSnapshot {
   interaction_schema_version: 2;
   session_id: string;
   chapter_id: string;
   zone_id: string;
   view_id: string;
+  current_background_view_id: string;
   sub_view_id: string | null;
   fsm_state: string;
   flags: Record<string, unknown>;
   journal_entries: Array<Record<string, unknown>>;
+  hotspots: CanonicalHotspotSnapshot[];
   game_state_version: number;
   updated_at: string;
   room_id: string;

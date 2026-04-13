@@ -22,7 +22,14 @@ import type {
 
 type ActionRequestPayload = {
   interaction_schema_version: 2;
-  action: "use_item" | "inspect" | "take_item" | "open_object";
+  action:
+    | "use_item"
+    | "inspect"
+    | "take_item"
+    | "open_object"
+    | "open_sub_view"
+    | "collect"
+    | "navigation";
   target_id: string;
   item_id?: string;
   client_action_id?: string;

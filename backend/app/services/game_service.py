@@ -8,6 +8,7 @@ This module is additive and does not alter Phase-3 scoring/progression flows.
 from __future__ import annotations
 
 import logging
+import copy
 
 import json
 import uuid
@@ -27,6 +28,36 @@ logger = logging.getLogger(__name__)
 MAX_TRACE_EVENTS = 20
 MAX_TRACE_EVENT_BYTES = 10_000
 
+# Temporary Room 404 bridge while frontend migrates to canonical-only gameplay payloads.
+# Keep this backend-only and retire once all legacy target/action usage is removed.
+_ROOM404_COMPAT_CANONICAL_TO_LEGACY_TARGET = {
+    "bedside_table": "drawer",
+    "folded_note": "note",
+    "warning_sign": "old_radio",
+}
+
+_ROOM404_COMPAT_LEGACY_TO_CANONICAL_TARGET = {
+    legacy_id: canonical_id
+    for canonical_id, legacy_id in _ROOM404_COMPAT_CANONICAL_TO_LEGACY_TARGET.items()
+}
+
+_ROOM404_COMPAT_CANONICAL_OBJECT_IDS = {
+    "folded_note": ("folded_note", "note"),
+}
+
+_ROOM404_COMPAT_CANONICAL_TO_LEGACY_ACTION = {
+    "collect": "inspect",
+    "navigation": "open_object",
+    "open_sub_view": "open_object",
+}
+
+_CANONICAL_HOTSPOT_PARENT_VIEW_DEFAULTS = {
+    "bedside_table": "patient_room_404__bg_01_bed_wall",
+    "folded_note": "patient_room_404__sub_bedside_drawer",
+    "warning_sign": "patient_room_404__bg_04_door_side",
+    "main_door": "patient_room_404__bg_04_door_side",
+}
+
 class GameplayServiceError(Exception):
     def __init__(
         self,
@@ -45,6 +76,22 @@ class GameplayServiceError(Exception):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _room404_canonical_target_id(target_id: str) -> str:
+    return _ROOM404_COMPAT_LEGACY_TO_CANONICAL_TARGET.get(target_id, target_id)
+
+
+def _room404_legacy_target_id(target_id: str) -> str:
+    return _ROOM404_COMPAT_CANONICAL_TO_LEGACY_TARGET.get(target_id, target_id)
+
+
+def _room404_legacy_action(action: str) -> str:
+    return _ROOM404_COMPAT_CANONICAL_TO_LEGACY_ACTION.get(action, action)
+
+
+def _room404_object_ids_for_canonical_target(target_id: str) -> tuple[str, ...]:
+    return _ROOM404_COMPAT_CANONICAL_OBJECT_IDS.get(target_id, (target_id,))
 
 
 def _default_room_state() -> list[dict[str, Any]]:
@@ -139,6 +186,196 @@ def _default_template_payload() -> dict[str, Any]:
     }
 
 
+def _resolve_current_background_view_id(
+    *,
+    view_id: str,
+    template_payload: dict[str, Any],
+) -> str:
+    if view_id.startswith("patient_room_404__bg_"):
+        return view_id
+
+    background_ref = template_payload.get("background_asset_key")
+    if isinstance(background_ref, str) and background_ref.startswith("patient_room_404__bg_"):
+        return background_ref
+
+    return "patient_room_404__bg_01_bed_wall"
+
+
+def _compute_hotspot_visible(
+    *,
+    parent_view_id: str,
+    visibility_intent: str,
+    active_view_id: str,
+    sub_view_id: str | None,
+) -> bool:
+    if parent_view_id != active_view_id:
+        return False
+    if visibility_intent == "hidden":
+        return False
+    if visibility_intent == "hidden_until_sub_view_open":
+        return sub_view_id == parent_view_id
+    return True
+
+
+def _compute_hotspot_clickable(
+    *,
+    visible: bool,
+    clickability_intent: str,
+    canonical_flags: dict[str, Any],
+) -> bool:
+    if not visible:
+        return False
+    if clickability_intent == "disabled":
+        return False
+    if clickability_intent == "enabled_when_unlocked":
+        return bool(canonical_flags.get("room404_exit_unlocked"))
+    return True
+
+
+def _canonical_hotspots_from_template(
+    *,
+    template_payload: dict[str, Any],
+    view_id: str,
+    sub_view_id: str | None,
+    canonical_flags: dict[str, Any],
+) -> list[dict[str, Any]]:
+    hotspots_data = template_payload.get("hotspots")
+    if not isinstance(hotspots_data, list):
+        return []
+
+    active_view_id = sub_view_id or view_id
+    hotspots: list[dict[str, Any]] = []
+
+    for entry in hotspots_data:
+        if not isinstance(entry, dict):
+            continue
+        hotspot_id = entry.get("id")
+        if not isinstance(hotspot_id, str) or not hotspot_id:
+            continue
+
+        parent_view_id = entry.get("parent_view_id")
+        if not isinstance(parent_view_id, str) or not parent_view_id:
+            parent_view_id = view_id
+
+        visibility_intent = str(entry.get("visibility_intent") or "visible")
+        clickability_intent = str(entry.get("clickability_intent") or "enabled_when_visible")
+
+        visible = _compute_hotspot_visible(
+            parent_view_id=parent_view_id,
+            visibility_intent=visibility_intent,
+            active_view_id=active_view_id,
+            sub_view_id=sub_view_id,
+        )
+        clickable = _compute_hotspot_clickable(
+            visible=visible,
+            clickability_intent=clickability_intent,
+            canonical_flags=canonical_flags,
+        )
+
+        target_view_id = entry.get("target_view_id")
+        if not isinstance(target_view_id, str):
+            target_view_id = None
+
+        action_hint = entry.get("target_action")
+        if not isinstance(action_hint, str):
+            action_hint = None
+
+        hotspots.append(
+            {
+                "id": hotspot_id,
+                "type": str(entry.get("type") or "interactable"),
+                "parent_view_id": parent_view_id,
+                "visible": visible,
+                "clickable": clickable,
+                "target_view_id": target_view_id,
+                "action_hint": action_hint,
+            }
+        )
+
+    return hotspots
+
+
+def _canonical_hotspots_from_legacy_state(
+    *,
+    room_state: list[dict[str, Any]],
+    view_id: str,
+    sub_view_id: str | None,
+    canonical_flags: dict[str, Any],
+) -> list[dict[str, Any]]:
+    active_view_id = sub_view_id or view_id
+    hotspots: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for obj in room_state:
+        if not isinstance(obj, dict):
+            continue
+        properties = obj.get("properties")
+        if not isinstance(properties, dict):
+            continue
+        hotspot_props = properties.get("hotspot")
+        if not isinstance(hotspot_props, dict):
+            continue
+
+        legacy_id = obj.get("id")
+        if not isinstance(legacy_id, str) or not legacy_id:
+            continue
+
+        canonical_id = _room404_canonical_target_id(legacy_id)
+        if canonical_id in seen:
+            continue
+        seen.add(canonical_id)
+
+        parent_view_id = _CANONICAL_HOTSPOT_PARENT_VIEW_DEFAULTS.get(
+            canonical_id,
+            active_view_id,
+        )
+        visibility_intent = (
+            "hidden_until_sub_view_open"
+            if canonical_id == "folded_note"
+            else "visible"
+        )
+        clickability_intent = (
+            "enabled_when_unlocked"
+            if canonical_id == "main_door"
+            else "enabled_when_visible"
+        )
+
+        visible = _compute_hotspot_visible(
+            parent_view_id=parent_view_id,
+            visibility_intent=visibility_intent,
+            active_view_id=active_view_id,
+            sub_view_id=sub_view_id,
+        )
+        clickable = _compute_hotspot_clickable(
+            visible=visible,
+            clickability_intent=clickability_intent,
+            canonical_flags=canonical_flags,
+        )
+
+        default_action = hotspot_props.get("default_action")
+        action_hint = default_action if isinstance(default_action, str) else None
+
+        target_view_id = (
+            "patient_room_404__sub_bedside_drawer"
+            if canonical_id == "bedside_table"
+            else None
+        )
+
+        hotspots.append(
+            {
+                "id": canonical_id,
+                "type": str(obj.get("type") or "interactable"),
+                "parent_view_id": parent_view_id,
+                "visible": visible,
+                "clickable": clickable,
+                "target_view_id": target_view_id,
+                "action_hint": action_hint,
+            }
+        )
+
+    return hotspots
+
+
 def _ensure_mode_gate(session: GameSession) -> None:
     settings = get_settings()
     if not settings.gameplay_v2_enabled:
@@ -217,11 +454,29 @@ def _build_snapshot(
     view_id = state_flags.get("view_id") or "patient_room_404__bg_01_bed_wall"
     sub_view_id = state_flags.get("sub_view_id")
     fsm_state = state_flags.get("fsm_state") or "room404_idle"
+    current_background_view_id = _resolve_current_background_view_id(
+        view_id=view_id,
+        template_payload=template_payload,
+    )
 
     if room_state is None:
         room_state = template_payload.get("objects", _default_room_state())
     if active_puzzles is None:
         active_puzzles = []
+
+    hotspots = _canonical_hotspots_from_template(
+        template_payload=template_payload,
+        view_id=view_id,
+        sub_view_id=sub_view_id,
+        canonical_flags=canonical_flags,
+    )
+    if not hotspots:
+        hotspots = _canonical_hotspots_from_legacy_state(
+            room_state=room_state,
+            view_id=view_id,
+            sub_view_id=sub_view_id,
+            canonical_flags=canonical_flags,
+        )
 
     inventory = state.inventory if isinstance(state.inventory, list) else []
 
@@ -231,10 +486,12 @@ def _build_snapshot(
         "chapter_id": chapter_id,
         "zone_id": zone_id,
         "view_id": view_id,
+        "current_background_view_id": current_background_view_id,
         "sub_view_id": sub_view_id,
         "fsm_state": fsm_state,
         "flags": canonical_flags,
         "journal_entries": journal_entries,
+        "hotspots": hotspots,
         "game_state_version": state.game_state_version,
         "updated_at": state.updated_at,
         "room_id": template_payload.get("room_id", session.current_room),
@@ -280,6 +537,187 @@ def _minimal_effects_for_telemetry(effects: list[dict[str, Any]]) -> list[dict[s
             }
         )
     return trimmed
+
+
+def _canonical_state_flags_container(state: GameState) -> dict[str, Any]:
+    base = state.flags if isinstance(state.flags, dict) else {}
+    if not isinstance(base.get("flags"), dict):
+        base["flags"] = {}
+    if not isinstance(base.get("journal_entries"), list):
+        base["journal_entries"] = []
+    return base
+
+
+def _canonical_flags(state_flags: dict[str, Any]) -> dict[str, Any]:
+    raw = state_flags.get("flags")
+    return raw if isinstance(raw, dict) else {}
+
+
+def _room_state_for_mutation(
+    *,
+    state_flags: dict[str, Any],
+    template_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    room_state = state_flags.get("room_state")
+    if isinstance(room_state, list):
+        return room_state
+    seeded = template_payload.get("objects", _default_room_state())
+    if isinstance(seeded, list):
+        return copy.deepcopy(seeded)
+    return _default_room_state()
+
+
+def _set_room_object_state(
+    room_state: list[dict[str, Any]],
+    *,
+    object_id: str,
+    state_value: str,
+    revealed: bool | None = None,
+) -> None:
+    for obj in room_state:
+        if obj.get("id") != object_id:
+            continue
+        obj["state"] = state_value
+        props = obj.get("properties") if isinstance(obj.get("properties"), dict) else {}
+        if revealed is not None:
+            props["revealed"] = revealed
+        obj["properties"] = props
+        return
+
+
+def _resolve_legacy_payload_action(
+    *,
+    action: str,
+    target_id: str,
+) -> tuple[str, str]:
+    mapped_target = _room404_legacy_target_id(target_id)
+    mapped_action = _room404_legacy_action(action)
+    return mapped_action, mapped_target
+
+
+def _apply_room404_canonical_action(
+    *,
+    action: str,
+    target_id: str,
+    state: GameState,
+    template_payload: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    if action not in {"inspect", "open_sub_view", "collect", "navigation"}:
+        return None
+
+    state_flags = _canonical_state_flags_container(state)
+    canonical_flags = _canonical_flags(state_flags)
+    room_state = _room_state_for_mutation(state_flags=state_flags, template_payload=template_payload)
+    inventory = state.inventory if isinstance(state.inventory, list) else []
+    effects: list[dict[str, Any]] = []
+
+    current_view_id = state_flags.get("view_id") or "patient_room_404__bg_01_bed_wall"
+
+    if action == "open_sub_view" and target_id == "bedside_table":
+        state_flags["sub_view_id"] = "patient_room_404__sub_bedside_drawer"
+        state_flags["fsm_state"] = "room404_sub_view_open"
+        effects.append(
+            {
+                "type": "show_dialogue",
+                "target_id": "bedside_table",
+                "dialogue_id": "room404_drawer_opened",
+            }
+        )
+
+    elif action == "collect" and target_id == "folded_note":
+        already_collected = bool(canonical_flags.get("bedside_note_collected"))
+        if not already_collected:
+            canonical_flags["bedside_note_collected"] = True
+            if all(item.get("id") != "folded_note" for item in inventory if isinstance(item, dict)):
+                inventory.append(
+                    {
+                        "id": "folded_note",
+                        "display_name": "Folded Note",
+                        "category": "clue",
+                        "consumed": False,
+                        "properties": {"source": "patient_room_404"},
+                    }
+                )
+            for object_id in _room404_object_ids_for_canonical_target("folded_note"):
+                _set_room_object_state(
+                    room_state,
+                    object_id=object_id,
+                    state_value="collected",
+                    revealed=False,
+                )
+            effects.append(
+                {
+                    "type": "add_item",
+                    "item_id": "folded_note",
+                    "target_id": "folded_note",
+                }
+            )
+        else:
+            effects.append(
+                {
+                    "type": "show_dialogue",
+                    "target_id": "folded_note",
+                    "dialogue_id": "room404_note_already_collected",
+                }
+            )
+
+    elif action == "inspect" and target_id == "warning_sign":
+        canonical_flags["first_language_interaction_done"] = True
+        effects.append(
+            {
+                "type": "open_puzzle",
+                "puzzle_id": "p_warning_sign_translate",
+                "target_id": "warning_sign",
+            }
+        )
+
+    elif action == "navigation" and target_id == "main_door":
+        if bool(canonical_flags.get("room404_exit_unlocked")):
+            effects.append(
+                {
+                    "type": "show_dialogue",
+                    "target_id": "main_door",
+                    "dialogue_id": "room404_door_unlocked",
+                }
+            )
+        else:
+            effects.append(
+                {
+                    "type": "show_dialogue",
+                    "target_id": "main_door",
+                    "dialogue_id": "room404_door_locked",
+                }
+            )
+
+    elif action == "navigation" and target_id in {
+        "patient_room_404__bg_01_bed_wall",
+        "patient_room_404__bg_04_door_side",
+        "return_to_main",
+    }:
+        state_flags["sub_view_id"] = None
+        state_flags["view_id"] = (
+            target_id
+            if target_id.startswith("patient_room_404__bg_")
+            else current_view_id
+        )
+        state_flags["fsm_state"] = "room404_idle"
+        effects.append(
+            {
+                "type": "show_dialogue",
+                "target_id": "navigation",
+                "dialogue_id": "room404_returned_to_main_view",
+            }
+        )
+
+    else:
+        return None
+
+    state_flags["flags"] = canonical_flags
+    state_flags["room_state"] = room_state
+    state.flags = state_flags
+    state.inventory = inventory
+
+    return effects
 
 
 def _resolve_effects(
@@ -469,14 +907,26 @@ async def apply_action(
                 },
             )
 
-        effects = _resolve_effects(
+        effects = _apply_room404_canonical_action(
             action=payload["action"],
             target_id=payload["target_id"],
-            item_id=payload.get("item_id"),
+            state=state,
             template_payload=template_payload,
         )
 
-        _apply_effects(effects=effects, state=state, template_payload=template_payload)
+        if effects is None:
+            resolved_action, resolved_target_id = _resolve_legacy_payload_action(
+                action=payload["action"],
+                target_id=payload["target_id"],
+            )
+            effects = _resolve_effects(
+                action=resolved_action,
+                target_id=resolved_target_id,
+                item_id=payload.get("item_id"),
+                template_payload=template_payload,
+            )
+
+            _apply_effects(effects=effects, state=state, template_payload=template_payload)
 
         state.game_state_version += 1
         state.updated_at = _utcnow()
