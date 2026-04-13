@@ -266,6 +266,7 @@ class NextPuzzleResponse(BaseModel):
 class SubmitAttemptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    puzzle_id: str | None = Field(default=None, min_length=1)
     variant_id: str = Field(..., min_length=1)
     answer: str = Field(..., min_length=1)
     response_time_ms: int = Field(..., ge=0)
@@ -282,6 +283,7 @@ class AttemptMetadata(BaseModel):
 
 
 class AttemptFeedback(BaseModel):
+    puzzle_id: str
     is_correct: bool
     correct_answers: list[str]
     p_learned_before: float

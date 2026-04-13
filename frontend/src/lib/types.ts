@@ -103,6 +103,7 @@ export interface NextPuzzleResponse {
 // ── POST /api/sessions/{id}/attempts ────────────────────
 
 export interface SubmitAttemptRequest {
+  puzzle_id?: string;
   variant_id: string;
   answer: string;
   response_time_ms: number;
@@ -115,6 +116,7 @@ export interface SubmitAttemptRequest {
 }
 
 export interface AttemptFeedback {
+  puzzle_id: string;
   is_correct: boolean;
   correct_answers: string[];
   p_learned_before: number;

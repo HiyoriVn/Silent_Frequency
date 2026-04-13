@@ -23,6 +23,7 @@ describe("PuzzleScreen", () => {
     game_state_version: 0,
     updated_at: new Date().toISOString(),
     room_id: "lab1",
+    flags: {},
     room_state: [
       {
         id: "old_radio",
@@ -136,11 +137,55 @@ describe("PuzzleScreen", () => {
       expect(submitAttempt).toHaveBeenCalledWith(
         "session-1",
         expect.objectContaining({
+          puzzle_id: "start_listen_code",
           variant_id: "start_listen_code_mid",
           answer: "1234",
         }),
       );
     });
+  });
+
+  it("shows incorrect feedback when answer is wrong", async () => {
+    submitAttempt.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        puzzle_id: "start_listen_code",
+        is_correct: false,
+        correct_answers: ["abcd"],
+        p_learned_before: 0.2,
+        p_learned_after: 0.25,
+        difficulty_tier: "mid",
+        current_level_index: 1,
+        session_complete: false,
+        mastery: {
+          vocabulary: 0.25,
+          grammar: 0.2,
+          listening: 0.2,
+        },
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    const hotspot = await screen.findByRole("button", { name: "Old Radio" });
+    fireEvent.click(hotspot);
+
+    await screen.findByRole("dialog", { name: "Puzzle Modal" });
+
+    fireEvent.change(
+      screen.getByPlaceholderText("Submit answer via POST /attempts"),
+      {
+        target: { value: "wrong" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(
+      await screen.findByText("Incorrect answer. Try again."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Puzzle Modal" }),
+    ).toBeInTheDocument();
   });
 
   it("shows stale-state banner on 409 and reconciles snapshot", async () => {
@@ -284,5 +329,30 @@ describe("PuzzleScreen", () => {
       await screen.findByText("Puzzle ID: p_warning_sign_translate"),
     ).toBeInTheDocument();
     expect(screen.getByText("Warning Sign Translation")).toBeInTheDocument();
+  });
+
+  it("shows canonical progression status from backend game-state", async () => {
+    getGameState.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        game_state: {
+          ...snapshot,
+          flags: {
+            room404_exit_unlocked: true,
+            first_language_interaction_done: true,
+            bedside_note_collected: true,
+          },
+          active_puzzles: [],
+        },
+      },
+    });
+
+    render(<PuzzleScreen sessionId="session-1" />);
+
+    expect(await screen.findByText("Room 404 Progress")).toBeInTheDocument();
+    expect(screen.getByText("Warning Sign Puzzle: Solved")).toBeInTheDocument();
+    expect(screen.getByText("Main Door: Unlocked")).toBeInTheDocument();
+    expect(screen.getByText("Language Interaction: Done")).toBeInTheDocument();
+    expect(screen.getByText("Folded Note: Collected")).toBeInTheDocument();
   });
 });

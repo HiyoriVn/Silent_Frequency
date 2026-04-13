@@ -336,6 +336,7 @@ async def submit_attempt(
         data = await puzzle_service.submit_attempt(
             db=db,
             session_id=session_id,
+            puzzle_id=body.puzzle_id,
             variant_id=body.variant_id,
             player_answer=body.answer,
             response_time_ms=body.response_time_ms,
@@ -384,6 +385,7 @@ async def submit_attempt(
     return ApiResponse(
         ok=True,
         data=AttemptFeedback(
+            puzzle_id=data["puzzle_id"],
             is_correct=data["is_correct"],
             correct_answers=data["correct_answers"],
             p_learned_before=data["p_learned_before"],

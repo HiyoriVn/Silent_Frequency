@@ -190,3 +190,95 @@ async def test_attempt_from_gameplay_v2_flow_persists_source_metadata(seeded: As
         event = event_result.scalar_one_or_none()
         assert event is not None
         assert event.payload.get("metadata", {}).get("source") == "gameplay_v2"
+
+
+@pytest.mark.asyncio
+async def test_warning_sign_attempt_evaluates_by_canonical_puzzle_id(seeded: AsyncClient) -> None:
+    create_res = await seeded.post(
+        "/api/sessions",
+        json={"display_name": "v2-warning-sign", "condition": "adaptive", "mode": "gameplay_v2"},
+    )
+    assert create_res.status_code == 200
+    session_id = create_res.json()["data"]["session_id"]
+
+    state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert state_res.status_code == 200
+    version = state_res.json()["data"]["game_state"]["game_state_version"]
+
+    trigger_res = await seeded.post(
+        f"/api/sessions/{session_id}/action",
+        json={
+            "interaction_schema_version": 2,
+            "action": "inspect",
+            "target_id": "warning_sign",
+            "game_state_version": version,
+            "client_action_id": str(uuid.uuid4()),
+        },
+    )
+    assert trigger_res.status_code == 200
+    assert any(e["type"] == "open_puzzle" for e in trigger_res.json()["data"]["effects"])
+
+    wrong_res = await seeded.post(
+        f"/api/sessions/{session_id}/attempts",
+        json={
+            "puzzle_id": "p_warning_sign_translate",
+            "variant_id": "p_warning_sign_translate__fallback",
+            "answer": "totally wrong answer",
+            "response_time_ms": 900,
+            "hint_count_used": 0,
+            "metadata": {"source": "gameplay_v2"},
+        },
+    )
+    assert wrong_res.status_code == 200
+    wrong_body = wrong_res.json()["data"]
+    assert wrong_body["puzzle_id"] == "p_warning_sign_translate"
+    assert wrong_body["is_correct"] is False
+
+    wrong_state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert wrong_state_res.status_code == 200
+    wrong_state = wrong_state_res.json()["data"]["game_state"]
+    wrong_flags = wrong_state.get("flags", {})
+    assert wrong_flags.get("room404_exit_unlocked") is False
+    assert wrong_flags.get("first_language_interaction_done") is False
+
+    correct_res = await seeded.post(
+        f"/api/sessions/{session_id}/attempts",
+        json={
+            "puzzle_id": "p_warning_sign_translate",
+            "variant_id": "p_warning_sign_translate__fallback",
+            "answer": "authorized personnel only",
+            "response_time_ms": 950,
+            "hint_count_used": 0,
+            "metadata": {"source": "gameplay_v2"},
+        },
+    )
+    assert correct_res.status_code == 200
+    correct_body = correct_res.json()["data"]
+    assert correct_body["puzzle_id"] == "p_warning_sign_translate"
+    assert correct_body["is_correct"] is True
+
+    solved_state_res = await seeded.get(f"/api/sessions/{session_id}/game-state")
+    assert solved_state_res.status_code == 200
+    solved_state = solved_state_res.json()["data"]["game_state"]
+    solved_flags = solved_state.get("flags", {})
+    assert solved_flags.get("first_language_interaction_done") is True
+    assert solved_flags.get("room404_exit_unlocked") is True
+    assert "p_warning_sign_translate" not in (solved_state.get("active_puzzles") or [])
+
+    main_door_res = await seeded.post(
+        f"/api/sessions/{session_id}/action",
+        json={
+            "interaction_schema_version": 2,
+            "action": "navigation",
+            "target_id": "main_door",
+            "game_state_version": solved_state["game_state_version"],
+            "client_action_id": str(uuid.uuid4()),
+        },
+    )
+    assert main_door_res.status_code == 200
+    dialogues = [
+        e.get("dialogue_id")
+        for e in main_door_res.json()["data"]["effects"]
+        if e.get("type") == "show_dialogue"
+    ]
+    assert "room404_door_unlocked" in dialogues

@@ -10,6 +10,7 @@ Handles:
 
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime, timezone
 
@@ -17,7 +18,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from ..db.models import Attempt, EventLog, GameSession, Puzzle, PuzzleVariant, Skill
+from ..db.models import Attempt, EventLog, GameSession, GameState, Puzzle, PuzzleVariant, Skill
 from ..engine.bkt_core import select_difficulty, update_mastery
 
 from . import mastery_service
@@ -40,6 +41,23 @@ ROOM_ORDER = {
     "radio_room": 1,
     "lab_room": 2,
 }
+
+ROOM404_WARNING_SIGN_PUZZLE_ID = "p_warning_sign_translate"
+
+ROOM404_CANONICAL_PUZZLE_BINDINGS: dict[str, dict[str, str | int]] = {
+    ROOM404_WARNING_SIGN_PUZZLE_ID: {
+        "skill": "vocabulary",
+        "slot_order": 1,
+        "difficulty_tier": "mid",
+    }
+}
+
+ROOM404_WARNING_SIGN_ACCEPTED_ANSWERS = [
+    "authorized personnel only",
+    "authorized staff only",
+    "chi nhan vien duoc phep",
+    "chi nguoi duoc uy quyen",
+]
 
 
 def _extract_interaction_payload(variant: PuzzleVariant) -> dict | None:
@@ -213,9 +231,56 @@ def _score_answer(player_answer: str, correct_answers: list[str]) -> bool:
     return any(normalised == ca.strip().lower() for ca in correct_answers)
 
 
+def _merge_accepted_answers(base: list[str], extras: list[str]) -> list[str]:
+    merged: list[str] = []
+    for answer in [*base, *extras]:
+        if answer not in merged:
+            merged.append(answer)
+    return merged
+
+
+async def _apply_room404_progression_on_success(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    canonical_puzzle_id: str,
+    is_correct: bool,
+) -> bool:
+    if not is_correct:
+        return False
+    if canonical_puzzle_id != ROOM404_WARNING_SIGN_PUZZLE_ID:
+        return False
+
+    state = await db.get(GameState, session_id)
+    if state is None:
+        raise ValueError(f"Game state for session={session_id} not found")
+
+    state_flags = copy.deepcopy(state.flags) if isinstance(state.flags, dict) else {}
+    canonical_flags = state_flags.get("flags")
+    if not isinstance(canonical_flags, dict):
+        canonical_flags = {}
+
+    canonical_flags["first_language_interaction_done"] = True
+    canonical_flags["room404_exit_unlocked"] = True
+
+    active_puzzles = state_flags.get("active_puzzles")
+    if not isinstance(active_puzzles, list):
+        active_puzzles = []
+    active_puzzles = [p for p in active_puzzles if p != ROOM404_WARNING_SIGN_PUZZLE_ID]
+
+    state_flags["flags"] = canonical_flags
+    state_flags["active_puzzles"] = active_puzzles
+    state.flags = state_flags
+    state.game_state_version += 1
+    state.updated_at = datetime.now(timezone.utc)
+
+    return True
+
+
 async def submit_attempt(
     db: AsyncSession,
     session_id: uuid.UUID,
+    puzzle_id: str | None,
     variant_id: str,
     player_answer: str,
     response_time_ms: int,
@@ -227,38 +292,70 @@ async def submit_attempt(
 
     Full pipeline for POST /api/sessions/{id}/attempts.
     """
-    # 1. Load the variant + parent puzzle
-    variant = await db.get(
-        PuzzleVariant, variant_id, options=[joinedload(PuzzleVariant.puzzle)]
-    )
-    if variant is None:
-        raise ValueError(f"Variant {variant_id} not found")
+    # 1. Load session first so gameplay_v2 can evaluate by canonical puzzle id.
+    session = await db.get(GameSession, session_id)
+    if session is None:
+        raise ValueError(f"Session {session_id} not found")
+
+    canonical_puzzle_id = puzzle_id
+
+    # 2. Resolve variant by canonical puzzle id for gameplay_v2 when provided.
+    if session.mode == "gameplay_v2" and puzzle_id is not None:
+        binding = ROOM404_CANONICAL_PUZZLE_BINDINGS.get(puzzle_id)
+        if binding is None:
+            raise ValueError(f"Unsupported gameplay_v2 puzzle_id={puzzle_id}")
+
+        puzzle = await _resolve_level_puzzle(
+            db,
+            str(binding["skill"]),
+            int(binding["slot_order"]),
+        )
+        variant = await _resolve_variant_for_tier(
+            db,
+            puzzle.id,
+            str(binding["difficulty_tier"]),
+        )
+    else:
+        # Compatibility/default path: resolve directly from variant id.
+        variant = await db.get(
+            PuzzleVariant, variant_id, options=[joinedload(PuzzleVariant.puzzle)]
+        )
+        if variant is None:
+            raise ValueError(f"Variant {variant_id} not found")
 
     puzzle = variant.puzzle
+    if canonical_puzzle_id is None:
+        canonical_puzzle_id = puzzle.id
 
-    # 2. Load skill info
+    # 3. Load skill info
     skill = await db.get(Skill, puzzle.skill_id)
     if skill is None:
         raise ValueError(f"Skill {puzzle.skill_id} not found")
 
-    # 3. Score the answer
-    is_correct = _score_answer(player_answer, variant.correct_answers)
+    # 4. Score the answer
+    accepted_answers = variant.correct_answers
+    if canonical_puzzle_id == ROOM404_WARNING_SIGN_PUZZLE_ID:
+        accepted_answers = _merge_accepted_answers(
+            variant.correct_answers,
+            ROOM404_WARNING_SIGN_ACCEPTED_ANSWERS,
+        )
+    is_correct = _score_answer(player_answer, accepted_answers)
 
-    # 4. Load BKT estimate
+    # 5. Load BKT estimate
     estimate = await mastery_service.get_skill_estimate(db, session_id, skill.code)
     if estimate is None:
         raise ValueError(f"No estimate for session={session_id}, skill={skill.code}")
 
-    # 5. Run BKT update via engine
+    # 6. Run BKT update via engine
     state, params = mastery_service.estimate_to_engine_objects(estimate)
     bkt_result = update_mastery(state, params, is_correct)
 
-    # 6. Write updated estimate back to DB
+    # 7. Write updated estimate back to DB
     estimate.p_ln = state.p_learned
     estimate.update_count = state.update_count
     estimate.updated_at = datetime.now(timezone.utc)
 
-    # 7. Count previous attempts on this puzzle in this session
+    # 8. Count previous attempts on this puzzle in this session
     count_result = await db.execute(
         select(func.count())
         .select_from(Attempt)
@@ -269,7 +366,7 @@ async def submit_attempt(
     )
     attempt_number = (count_result.scalar() or 0) + 1
 
-    # 8. Log the attempt
+    # 9. Log the attempt
     attempt = Attempt(
         session_id=session_id,
         puzzle_id=puzzle.id,
@@ -286,11 +383,12 @@ async def submit_attempt(
     )
     db.add(attempt)
 
-    # 9. Log event
+    # 10. Log event
     db.add(EventLog(
         session_id=session_id,
         event_type="attempt_submitted",
         payload={
+            "canonical_puzzle_id": canonical_puzzle_id,
             "puzzle_id": puzzle.id,
             "variant_id": variant.id,
             "skill": skill.code,
@@ -310,6 +408,7 @@ async def submit_attempt(
             payload={
                 "version": 1,
                 "type": "interaction_trace",
+                "canonical_puzzle_id": canonical_puzzle_id,
                 "puzzle_id": puzzle.id,
                 "variant_id": variant.id,
                 "skill": skill.code,
@@ -318,11 +417,7 @@ async def submit_attempt(
             },
         ))
 
-    # 10. Advance session progression index
-    session = await db.get(GameSession, session_id)
-    if session is None:
-        raise ValueError(f"Session {session_id} not found")
-
+    # 11. Advance session progression index
     session.current_level_index += 1
     session_complete = session.current_level_index >= len(LEVEL_SCRIPT)
     if session_complete:
@@ -338,14 +433,33 @@ async def submit_attempt(
         },
     ))
 
+    progression_applied = await _apply_room404_progression_on_success(
+        db,
+        session_id=session_id,
+        canonical_puzzle_id=canonical_puzzle_id,
+        is_correct=is_correct,
+    )
+    if progression_applied:
+        db.add(EventLog(
+            session_id=session_id,
+            event_type="room404_progression_applied",
+            payload={
+                "puzzle_id": canonical_puzzle_id,
+                "first_language_interaction_done": True,
+                "room404_exit_unlocked": True,
+                "active_puzzles_cleared": True,
+            },
+        ))
+
     await db.commit()
 
-    # 11. Get full mastery snapshot for response
+    # 12. Get full mastery snapshot for response
     mastery_snap = await mastery_service.get_mastery_snapshot(db, session_id)
 
     return {
+        "puzzle_id": canonical_puzzle_id,
         "is_correct": is_correct,
-        "correct_answers": variant.correct_answers,
+        "correct_answers": accepted_answers,
         "p_learned_before": bkt_result.p_learned_before,
         "p_learned_after": bkt_result.p_learned_after,
         "difficulty_tier": bkt_result.recommended_tier,

@@ -44,6 +44,11 @@ interface ActivePuzzleModal {
   title: string;
 }
 
+interface AttemptResultBanner {
+  status: "success" | "error";
+  message: string;
+}
+
 type TraceEventInput = {
   event_type: InteractionTraceEvent["event_type"];
   hotspot_id?: string;
@@ -82,6 +87,8 @@ const ROOM404_PUZZLE_PROMPTS: Record<string, string> = {
   p_warning_sign_translate:
     "The warning sign text is partially faded. Translate its key safety phrase into clear English.",
 };
+
+const ROOM404_WARNING_SIGN_PUZZLE_ID = "p_warning_sign_translate";
 
 function toTitleLabel(id: string): string {
   return id
@@ -257,6 +264,8 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
   const [modal, setModal] = React.useState<ActivePuzzleModal | null>(null);
   const [attemptKey, setAttemptKey] = React.useState("attempt-0");
   const [attemptAnswer, setAttemptAnswer] = React.useState("");
+  const [attemptResult, setAttemptResult] =
+    React.useState<AttemptResultBanner | null>(null);
   const [staleBanner, setStaleBanner] = React.useState(false);
   const retryHandlerRef = React.useRef<(() => void) | null>(null);
   const traceStartRef = React.useRef<number>(0);
@@ -340,6 +349,8 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       const puzzlePayload = await loadPuzzleById(puzzleId);
 
       resetAttemptTrace();
+      setAttemptResult(null);
+      setAttemptAnswer("");
       setModal({
         puzzleId,
         puzzle: puzzlePayload,
@@ -463,6 +474,7 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     if (!modal || !attemptAnswer.trim()) return;
     setLoading(true);
     setError(null);
+    setAttemptResult(null);
 
     const responseTimeMs =
       trace.length > 0 ? trace[trace.length - 1].elapsed_ms : 0;
@@ -480,6 +492,7 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
         : undefined;
 
     const result = await submitAttempt(sessionId, {
+      puzzle_id: modal.puzzleId,
       variant_id: modal.puzzle.variant_id,
       answer: attemptAnswer.trim(),
       response_time_ms: responseTimeMs,
@@ -504,8 +517,22 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
       return;
     }
 
-    setModal(null);
-    setAttemptAnswer("");
+    if (result.data?.is_correct) {
+      setAttemptResult({
+        status: "success",
+        message: "Correct answer. Puzzle resolved.",
+      });
+      appendTrace({
+        event_type: "prompt_closed",
+        prompt_ref: result.data.puzzle_id,
+      });
+    } else {
+      setAttemptResult({
+        status: "error",
+        message: "Incorrect answer. Try again.",
+      });
+    }
+
     setTrace([]);
     traceStartRef.current = 0;
     setLoading(false);
@@ -520,6 +547,18 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
     : "patient_room_404__bg_01_bed_wall";
   const assetKey = ROOM404_VIEW_ASSET_KEYS[activeViewId] ?? activeViewId;
   const foldedNoteCollected = Boolean(snapshot?.flags?.bedside_note_collected);
+  const doorUnlocked = Boolean(snapshot?.flags?.room404_exit_unlocked);
+  const firstLanguageInteractionDone = Boolean(
+    snapshot?.flags?.first_language_interaction_done,
+  );
+  const warningSignPuzzleActive = Boolean(
+    snapshot?.active_puzzles?.includes(ROOM404_WARNING_SIGN_PUZZLE_ID),
+  );
+  const warningSignPuzzleStatus = doorUnlocked
+    ? "Solved"
+    : warningSignPuzzleActive
+      ? "In progress"
+      : "Not solved";
   const isSubViewOpen = Boolean(snapshot?.sub_view_id);
 
   return (
@@ -609,9 +648,24 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
 
         <div className="mt-4 space-y-2 text-xs text-neutral-400">
           <p>State Version: {snapshot?.game_state_version ?? 0}</p>
-          <p>
-            Folded note: {foldedNoteCollected ? "Collected" : "Not collected"}
-          </p>
+        </div>
+
+        <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-800/60 p-3">
+          <h3 className="mb-2 text-xs uppercase tracking-wider text-neutral-300">
+            Room 404 Progress
+          </h3>
+          <ul className="space-y-1 text-xs text-neutral-400">
+            <li>Warning Sign Puzzle: {warningSignPuzzleStatus}</li>
+            <li>Main Door: {doorUnlocked ? "Unlocked" : "Locked"}</li>
+            <li>
+              Language Interaction:{" "}
+              {firstLanguageInteractionDone ? "Done" : "Not done"}
+            </li>
+            <li>
+              Folded Note: {foldedNoteCollected ? "Collected" : "Not collected"}
+            </li>
+          </ul>
+
           {selectedItemId && (
             <p className="text-cyan-300">
               Selected item: {selectedItemId}. Click a hotspot target to use it.
@@ -665,6 +719,18 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
               {modal.puzzle.prompt_text}
             </p>
 
+            {attemptResult && (
+              <p
+                className={`mb-3 text-sm ${
+                  attemptResult.status === "success"
+                    ? "text-emerald-300"
+                    : "text-rose-300"
+                }`}
+              >
+                {attemptResult.message}
+              </p>
+            )}
+
             <div className="space-y-4">
               <HintPanel
                 hints={modal.puzzle.hints ?? []}
@@ -690,7 +756,11 @@ export default function PuzzleScreen({ sessionId }: PuzzleScreenProps) {
             </div>
             <button
               type="button"
-              onClick={() => setModal(null)}
+              onClick={() => {
+                setModal(null);
+                setAttemptResult(null);
+                setAttemptAnswer("");
+              }}
               className="mt-3 text-xs text-neutral-500 hover:text-neutral-300"
             >
               Close
